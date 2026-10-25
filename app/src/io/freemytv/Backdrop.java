@@ -29,7 +29,9 @@ final class Backdrop {
     /** The light design's hero photo (sharp, behind everything). */
     static final int HERO_W = ui(1280), HERO_H = ui(720);
     /** The cards at their focused size (1.05×): the wide one and the two tall ones. */
-    static final int WIDE_W = ui(1092), WIDE_H = ui(464), TALL_W = ui(336), TALL_H = ui(464);
+    // V1.6 draws the wide image in 432×243 cards (475×267 focused) and the shelf's scene: its 16:9 middle (480×272)
+    // covers both pixel for pixel. The tall card is no longer drawn.
+    static final int WIDE_W = ui(640), WIDE_H = ui(272);
 
     private static float uiScale() {
         android.util.DisplayMetrics m = android.content.res.Resources.getSystem().getDisplayMetrics();
@@ -96,7 +98,7 @@ final class Backdrop {
         Canvas c = new Canvas(out);
         if (forLight) {
             // Light design: everything comes from the photo without scrims.
-            Bitmap wide = card(out, WIDE_W, WIDE_H), tall = card(out, TALL_W, TALL_H);
+            Bitmap wide = card(out, WIDE_W, WIDE_H), tall = null;
             int[] frost = reduce(out, FW, FH, 3, 3);
             int[] light = whiten(frost.clone(), 0.82f);
             int[] glass = reduce(out, GW, GH, 2, 2);
