@@ -7,7 +7,13 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.BlurMaskFilter;
+import android.graphics.LinearGradient;
+import android.graphics.Matrix;
+import android.graphics.RadialGradient;
+import android.graphics.Shader;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Rect;
@@ -359,6 +365,9 @@ public class SettingsActivity extends Activity {
             detailText = new TextPaint(Ui.text(Ui.regular, 25 * k, 0xADEBEBF5));
             card = new Paint(Paint.ANTI_ALIAS_FLAG);
             detailFor = -1;
+            previewClock = Ui.numbers(Ui.displaySemibold, 46 * k, 0xFFFFFFFF);
+            previewClock.setLetterSpacing(-0.04f);
+            previewSmall = Ui.text(Ui.medium, 16 * k, 0xBFFFFFFF);
             Symbols.warm(getContext(), "chevron_right", 22 * k);
             Symbols.warm(getContext(), "check", 26 * k);
             title = Ui.text(Ui.displaySemibold, 50 * k, 0xFFFFFFFF);
@@ -1237,6 +1246,55 @@ public class SettingsActivity extends Activity {
             refreshShelfRows(pkg);
         }
 
+        private final Matrix miniMatrix = new Matrix();
+        private final RectF miniDst = new RectF();
+        private final java.util.Map<String, Object[]> minis = new java.util.HashMap<>();
+        private final Paint miniPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        private final android.graphics.PorterDuffColorFilter whiteInk =
+                new android.graphics.PorterDuffColorFilter(0xFFFFFFFF, android.graphics.PorterDuff.Mode.SRC_IN);
+
+        /** A small card like the shelf's: the white logo on the brand's deep gradient (or the name). Returns its right edge. */
+        private float drawMini(Canvas c, String pkg, float left, float cy, boolean lit) {
+            float mw = 96 * k, mh = 54 * k;
+            Object[] m = minis.get(pkg);
+            if (m == null && !minis.containsKey(pkg)) {
+                Object[] d = HomeApps.mini(getContext(), pkg);
+                if (d != null) {
+                    int[] deep = HomeView.BRAND_DEEP.get((String) d[0]);
+                    int brand = (Integer) d[1];
+                    int[] colors = deep != null ? deep : new int[] {blend(brand, 0xFF000000, 0.35f), blend(brand, 0xFF000000, 0.8f), 0xFF0D0D0F};
+                    m = new Object[] {new RadialGradient(0, 0, 1, colors, new float[] {0, 0.55f, 1}, Shader.TileMode.CLAMP), d[2]};
+                }
+                minis.put(pkg, m);
+            }
+            tmp.set(left, cy - mh / 2, left + mw, cy + mh / 2);
+            miniPaint.setAlpha(lit ? 255 : 110);
+            if (m != null) {
+                Matrix at = miniMatrix;
+                at.setScale(mw * 1.1f, mh * 1.6f);
+                at.postTranslate(left + mw * 0.2f, cy - mh / 2);
+                ((Shader) m[0]).setLocalMatrix(at);
+                miniPaint.setShader((Shader) m[0]);
+            } else {
+                miniPaint.setShader(null);
+                miniPaint.setColor(0xFF2C2C30);
+                miniPaint.setAlpha(lit ? 255 : 110);
+            }
+            c.drawRoundRect(tmp, 12 * k, 12 * k, miniPaint);
+            miniPaint.setShader(null);
+            Bitmap logo = m == null ? null : (Bitmap) m[1];
+            if (logo != null) {
+                float s = Math.min(mw * 0.72f / logo.getWidth(), mh * 0.46f / logo.getHeight());
+                float lw = logo.getWidth() * s, lh = logo.getHeight() * s;
+                RectF dst = miniDst;
+                dst.set(left + (mw - lw) / 2, cy - lh / 2, left + (mw + lw) / 2, cy + lh / 2);
+                miniPaint.setColorFilter(whiteInk);
+                c.drawBitmap(logo, null, dst, miniPaint);
+                miniPaint.setColorFilter(null);
+            }
+            return left + mw;
+        }
+
         private void drawShelfEditor(Canvas c) {
             Paint heading = detailTitle;
             c.drawText(editingTop ? Ui.tr("Top Buttons") : Ui.tr("Shelf"), LIST_X * k, (LIST_TOP - 30) * k, heading);
@@ -1252,7 +1310,9 @@ public class SettingsActivity extends Activity {
                         : blend(place >= 0 ? 0xF2FFFFFF : 0x80FFFFFF, place >= 0 ? INK : 0x801C1C1E, f));
                 rowValue.setColor(off ? blend(0x59FFFFFF, 0x591C1C1E, f) : blend(0xB3FFFFFF, 0xB31C1C1E, f));
                 float base = rowRect.centerY() + Ui.halfCap(rowLabel);
-                c.drawText(TextUtils.ellipsize(app[1], new TextPaint(rowLabel), 520 * k, TextUtils.TruncateAt.END).toString(), rowRect.left + 30 * k, base, rowLabel);
+                float lx = rowRect.left + 30 * k;
+                if (!editingTop) lx = drawMini(c, app[0], rowRect.left + 12 * k, rowRect.centerY(), place >= 0 || f > 0.5f) + 22 * k;
+                c.drawText(TextUtils.ellipsize(app[1], new TextPaint(rowLabel), 520 * k, TextUtils.TruncateAt.END).toString(), lx, base, rowLabel);
                 float right = rowRect.right - 30 * k;
                 if (place >= 0 && !off) {
                     // On the shelf: a check, as in the pickers, after its place.
@@ -1333,6 +1393,90 @@ public class SettingsActivity extends Activity {
                     LIST_X * k + 30 * k, hy, hint);
         }
 
+        // MARK: - Screensaver preview (a small card beside its rows)
+
+        private Bitmap previewPhoto;
+        private String previewCredit = "";
+        private boolean previewLoading;
+        private final Paint previewPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        private Shader previewShade;
+
+        /** The first pick's photo, decoded small in the background. */
+        private void loadPreview() {
+            if (previewPhoto != null || previewLoading) return;
+            previewLoading = true;
+            Context c = getContext();
+            new Thread(() -> {
+                Bitmap b = null;
+                String credit = "";
+                try {
+                    Recs recs = Recs.get(c);
+                    for (Recs.Pick p : recs.showcase()) {
+                        java.io.File f = p.photo != null ? p.photo : recs.readyImage(p);
+                        if (f == null || !f.exists()) continue;
+                        BitmapFactory.Options o = new BitmapFactory.Options();
+                        o.inSampleSize = 4;
+                        b = BitmapFactory.decodeFile(f.getPath(), o);
+                        credit = p.title == null ? "" : p.title;
+                        if (b != null) break;
+                    }
+                } catch (RuntimeException e) {
+                    AppLog.w("settings preview: " + e.getMessage());
+                }
+                Bitmap photo = b;
+                String text = credit;
+                handler.post(() -> {
+                    previewLoading = false;
+                    previewPhoto = photo;
+                    previewCredit = text;
+                    invalidate();
+                });
+            }).start();
+        }
+
+        /** The screensaver in miniature: photo, the Galeria clock and credit, dimmed like the brightness says. */
+        private void drawPreview(Canvas c, float left, float top) {
+            float pw = 480 * k, ph = 270 * k, r = 22 * k;
+            tmp.set(left, top, left + pw, top + ph);
+            c.save();
+            android.graphics.Path clip = previewClip;
+            clip.reset();
+            clip.addRoundRect(tmp, r, r, android.graphics.Path.Direction.CW);
+            c.clipPath(clip);
+            c.drawColor(0xFF1C1C1E);
+            if (previewPhoto != null) {
+                float s = Math.max(pw / previewPhoto.getWidth(), ph / previewPhoto.getHeight());
+                float dw = previewPhoto.getWidth() * s, dh = previewPhoto.getHeight() * s;
+                miniDst.set(left + (pw - dw) / 2, top + (ph - dh) / 2, left + (pw + dw) / 2, top + (ph + dh) / 2);
+                c.drawBitmap(previewPhoto, null, miniDst, previewPaint);
+                // Brightness dims the photo only, as on the real screensaver.
+                c.drawColor(Math.round(255 * (1 - Prefs.saverBright() / 100f)) << 24);
+            }
+            if (previewShade == null) previewShade = new LinearGradient(0, 0, 0, 1, new int[] {0, 0xB8000000},
+                    new float[] {0.45f, 1}, Shader.TileMode.CLAMP);
+            miniMatrix.setScale(1, ph);
+            miniMatrix.postTranslate(0, top);
+            previewShade.setLocalMatrix(miniMatrix);
+            previewPaint.setShader(previewShade);
+            c.drawRect(tmp, previewPaint);
+            previewPaint.setShader(null);
+            c.drawText(Ui.clock(System.currentTimeMillis()), left + 24 * k, top + ph - 44 * k, previewClock);
+            c.drawText(Ui.date(System.currentTimeMillis()), left + 24 * k, top + ph - 20 * k, previewSmall);
+            previewSmall.setTextAlign(Paint.Align.RIGHT);
+            c.drawText(TextUtils.ellipsize(previewCredit, new TextPaint(previewSmall), 200 * k, TextUtils.TruncateAt.END).toString(),
+                    left + pw - 22 * k, top + ph - 20 * k, previewSmall);
+            previewSmall.setTextAlign(Paint.Align.LEFT);
+            c.restore();
+            card.setColor(0x14FFFFFF);
+            card.setStyle(Paint.Style.STROKE);
+            card.setStrokeWidth(1.5f * k);
+            c.drawRoundRect(tmp, r, r, card);
+            card.setStyle(Paint.Style.FILL);
+        }
+
+        private final android.graphics.Path previewClip = new android.graphics.Path();
+        private Paint previewClock, previewSmall;
+
         /** An iOS switch, its right edge at `right`: green when on. */
         private void drawSwitch(Canvas c, float right, float cy, boolean isOn, float f) {
             float sw = 54 * k, sh = 32 * k;
@@ -1396,6 +1540,7 @@ public class SettingsActivity extends Activity {
                     : screen == SAVER ? Ui.tr("← → change the brightness. The photos dim, the clock stays easy to read.")
                     : screen == POWER && powerRow() != P_SHOW && unavailable(focus) == null ? Ui.tr("OK opens the list. ← → change the value.")
                     : Ui.tr("OK or the arrows change the value.")), LIST_X * k + 30 * k, hy, hint);
+            if (screen == SAVER) drawPreview(c, LIST_X * k, hy + 50 * k);
             if (keys) {
                 c.drawText(RemoteKeys.VESTEL ? Ui.tr("YouTube, Prime Video and Google Play: the TV itself controls those buttons.")
                         : RemoteKeys.KTC ? Ui.tr("Netflix, YouTube and Prime Video: the TV itself controls those buttons.")
@@ -1474,6 +1619,7 @@ public class SettingsActivity extends Activity {
             } else if (focus == 1) {
                 screen = SAVER;
                 focus = 0;
+                loadPreview();
             } else if (focus == 2) {
                 screen = HOME_SETTINGS;
                 focus = 0;

@@ -196,6 +196,13 @@ final class HomeApps {
         return items;
     }
 
+    /** For Settings > Shelf: {key, brand color} of a known app and its logo (lifted earlier by the home screen), or null. */
+    static Object[] mini(Context c, String pkg) {
+        String[] d = known(pkg);
+        if (d == null) return null;
+        return new Object[] {d[0], 0xFF000000 | Integer.parseInt(d[3], 16), shelfLogo(c, d[0], d[2], d[4], false)};
+    }
+
     private static String[] known(String pkg) {
         for (String[] d : SHELF) if (d[2].equals(pkg)) return d;
         return null;

@@ -214,7 +214,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         TILE_STYLE.put("paramount", new int[] {0xFF0064FF, 0xFF00256B, 1});
     }
     /** The V1.6 tiles: a glow of the brand's color rising from the bottom into near-black (glow, middle, edge). */
-    private static final Map<String, int[]> BRAND_DEEP = new HashMap<>();
+    static final Map<String, int[]> BRAND_DEEP = new HashMap<>();
     static {
         BRAND_DEEP.put("netflix", new int[] {0xFF6B0D14, 0xFF1A0809, 0xFF0D0D0F});
         BRAND_DEEP.put("youtube", new int[] {0xFF5C1010, 0xFF1A0B0B, 0xFF0F0F10});
