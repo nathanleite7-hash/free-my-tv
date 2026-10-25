@@ -3569,10 +3569,88 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * The fixed top bar: the page's scrim as it scrolls under, the tabs in a glass capsule (the selected one lit, the
      * focused one white), and at the right the dollar, the weather, the time and the Settings button.
      */
+    // MARK: - Real blur behind the top bar (Android 12+)
+
+    /** Android 12+: the tabs capsule and the round buttons blur what passes under them, as in the V1.6 prototype. */
+    private final boolean realBlur = !Ui.LEGACY && android.os.Build.VERSION.SDK_INT >= 31;
+    private final android.graphics.RenderNode barBlur = realBlur ? new android.graphics.RenderNode("barBlur") : null;
+    private final android.graphics.Path barClip = new android.graphics.Path();
+    private final Paint glassRim = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private float barBlurK = -1;
+
+    /** The glass of a bar control: over the real blur, a light veil and a hairline; elsewhere, the liquid glass. */
+    private void barGlass(Canvas c, RectF r, float rad, float alpha) {
+        if (!realBlur) {
+            scene.liquid(c, r, rad, SMOKE, 0.5f, 0.01f, 12 * k, 8 * k, 0.45f, alpha);
+            return;
+        }
+        if (alpha <= 0.004f) return;
+        fill.setShader(null);
+        fill.setColor(Ui.alpha(0xFFFFFFFF, 0.09f * alpha));
+        c.drawRoundRect(r, rad, rad, fill);
+        glassRim.setStyle(Paint.Style.STROKE);
+        glassRim.setStrokeWidth(1.5f * k);
+        glassRim.setColor(Ui.alpha(0xFFFFFFFF, 0.14f * alpha));
+        c.drawRoundRect(r.left + 0.75f * k, r.top + 0.75f * k, r.right - 0.75f * k, r.bottom - 0.75f * k, rad, rad, glassRim);
+    }
+
+    @Override protected boolean drawChild(Canvas canvas, View child, long time) {
+        if (child == status && barBlur != null && picksOn() && status.getVisibility() == VISIBLE && canvas.isHardwareAccelerated()) {
+            drawBarBlur(canvas, time);
+        }
+        return super.drawChild(canvas, child, time);
+    }
+
+    /** What is under the bar (sky, hero, shelf, rows: their display lists, not redrawn), blurred and cut to its shapes. */
+    private void drawBarBlur(Canvas canvas, long time) {
+        if (barBlurK != k) {
+            barBlurK = k;
+            android.graphics.ColorMatrix saturate = new android.graphics.ColorMatrix();
+            saturate.setSaturation(1.8f);
+            barBlur.setRenderEffect(android.graphics.RenderEffect.createChainEffect(
+                    android.graphics.RenderEffect.createColorFilterEffect(new android.graphics.ColorMatrixColorFilter(saturate)),
+                    android.graphics.RenderEffect.createBlurEffect(40 * k, 40 * k, Shader.TileMode.CLAMP)));
+        }
+        float ty = status.getTranslationY();
+        // The scrim goes under the blur here: the capsule shows the content's color, blurred,
+        // and the text beside it still reads.
+        float scrim = Ui.clamp(scrollY.value / 200f) * status.getAlpha();
+        if (scrim > 0.004f) {
+            fill.setShader(barScrim);
+            fill.setAlpha(Math.round(255 * scrim));
+            canvas.save();
+            canvas.translate(0, ty);
+            canvas.drawRect(0, 0, w, BAR_SCRIM_H * k, fill);
+            canvas.restore();
+            fill.setShader(null);
+            fill.setAlpha(255);
+        }
+        barClip.reset();
+        barClip.addRoundRect(barRect, barRect.height() / 2, barRect.height() / 2, android.graphics.Path.Direction.CW);
+        for (int i = 0; i < lightButtons.size(); i++) {
+            RectF r = topRects[3 + i];
+            barClip.addCircle(r.centerX(), r.centerY(), r.width() / 2, android.graphics.Path.Direction.CW);
+        }
+        int bottom = Math.round(barRect.bottom + 60 * k);
+        barBlur.setPosition(0, 0, w, bottom);
+        barBlur.setAlpha(status.getAlpha());
+        Canvas rc = barBlur.beginRecording();
+        rc.translate(0, -ty);
+        for (View v : new View[] {sky, heroLayer, platter, tiles, rowsLayer}) {
+            if (v.getVisibility() == VISIBLE) super.drawChild(rc, v, time);
+        }
+        barBlur.endRecording();
+        canvas.save();
+        canvas.translate(0, ty);
+        canvas.clipPath(barClip);
+        canvas.drawRenderNode(barBlur);
+        canvas.restore();
+    }
+
     private void drawLightButtons(Canvas c) {
         applyTone();
         float scrim = Ui.clamp(scrollY.value / 200f);
-        if (scrim > 0.004f) {
+        if (scrim > 0.004f && !realBlur) {
             fill.setShader(barScrim);
             fill.setAlpha(Math.round(255 * scrim));
             c.drawRect(0, 0, w, BAR_SCRIM_H * k, fill);
@@ -3581,7 +3659,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         if (picksOn()) {
             float rad = barRect.height() / 2;
-            scene.liquid(c, barRect, rad, SMOKE, 0.5f, 0.01f, 12 * k, 8 * k, 0.45f, 1);
+            barGlass(c, barRect, rad, 1);
             float focus = Ui.clamp(topFocus[tab].value);
             for (int i = 0; i < 3; i++) {
                 RectF r = topRects[i];
@@ -3606,7 +3684,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             RectF r = topRects[3 + i];
             float f = Ui.clamp(topFocus[3 + i].value), s = 1 + 0.08f * f, rad = r.width() / 2 * s;
             cell.set(r.centerX() - rad, r.centerY() - rad, r.centerX() + rad, r.centerY() + rad);
-            scene.liquid(c, cell, rad, SMOKE, 0.5f, 0.01f, 12 * k, 8 * k, 0.45f, 1 - f);
+            barGlass(c, cell, rad, 1 - f);
             if (f > 0.01f) {
                 fill.setShader(null);
                 fill.setColor(Ui.alpha(0xFFFFFFFF, f));
