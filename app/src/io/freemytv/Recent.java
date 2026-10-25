@@ -60,7 +60,20 @@ final class Recent {
     }
 
     /** Newest first; an app's card says when it was opened in its meta line. */
-    static List<Recs.Pick> list(Context c) {
+    private static List<Recs.Pick> memo;
+    private static long memoMinute = -1;
+
+    /** Read again only when it changed or a minute went by (its "2 min ago" moves on). */
+    static synchronized List<Recs.Pick> list(Context c) {
+        long minute = System.currentTimeMillis() / 60_000L;
+        if (memo == null || minute != memoMinute) {
+            memo = read(c, true);
+            memoMinute = minute;
+        }
+        return memo;
+    }
+
+    private static List<Recs.Pick> read(Context c, boolean unused) {
         List<Recs.Pick> out = new ArrayList<>();
         JSONArray a = read(c);
         for (int i = 0; i < a.length(); i++) {
@@ -109,6 +122,7 @@ final class Recent {
     }
 
     private static void write(Context c, JSONArray list) {
+        memo = null;
         try {
             File tmp = new File(c.getFilesDir(), FILE + ".tmp");
             java.nio.file.Files.write(tmp.toPath(), list.toString().getBytes(StandardCharsets.UTF_8));
@@ -120,6 +134,7 @@ final class Recent {
     }
 
     private static synchronized void put(Context c, JSONObject item) {
+        memo = null;
         JSONArray old = read(c), next = new JSONArray();
         next.put(item);
         String key = item.optString("key");

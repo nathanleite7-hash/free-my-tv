@@ -709,8 +709,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     /** New lists, or a card's image is ready. */
+    private int rowsVersion = -1;
+
     @Override public void onRows() {
-        updatePicks();
+        // A card's image came in: only the rows draw again. The lists are worked out again only when they changed.
+        if (rowsData.version() != rowsVersion) {
+            rowsVersion = rowsData.version();
+            updatePicks();
+        }
         rowsDirty = true;
         rowsLayer.invalidate();
     }
@@ -3613,16 +3619,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             retarget(false);
         }
         rowCol = Math.min(rowCol, Math.max(0, rowList(rowIndex).size() - 1));
-        int scenes = appScene.size();
-        appScene.clear();
-        for (Recs.Pick p : recs.wanted()) {
-            if (p.pkg == null || appScene.containsKey(p.pkg)) continue;
-            Backdrop sb = recs.backdrop(p);
-            if (sb != null && sb.wide != null) appScene.put(p.pkg, sb);
-        }
         // Only when something changed: this runs every 15 s, and each redraw repaints a hardware layer.
         rowsDirty |= rowsChanged || picksChanged;
-        tilesDirty |= appScene.size() != scenes || picksChanged;
+        tilesDirty |= picksChanged;
         heroDirty = true;
         spoken.focusMoved();    // new picks under the focused card
     }
@@ -3673,7 +3672,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * The genres in "Recently watched" (two at most, the most frequent), and every title in the rows in those genres
      * that you haven't opened. With nothing watched yet, the rows' titles as they come. "Surprise me" leads it.
      */
+    private List<Recs.Pick> togetherMemo = new ArrayList<>();
+    private String togetherKey = "";
+
+    /** The same as last time unless the lists, what you watched, the hour or the spin changed (it costs ~100 ms). */
     private List<Recs.Pick> together(List<Recs.Pick> recent) {
+        StringBuilder key = new StringBuilder().append(rowsData.version()).append('|').append(System.currentTimeMillis() / 3600_000L)
+                .append('|').append(surpriseLanded == null ? "" : surpriseLanded.title).append('|').append(spinning());
+        for (Recs.Pick p : recent) key.append('|').append(p.title);
+        if (key.toString().equals(togetherKey)) return togetherMemo;
+        togetherKey = key.toString();
+        togetherMemo = togetherNow(recent);
+        return togetherMemo;
+    }
+
+    private List<Recs.Pick> togetherNow(List<Recs.Pick> recent) {
         List<Recs.Pick> all = new ArrayList<>(rowsData.pool());   // a few hundred titles, beyond what the rows show
         // Not the Top 10s: they're Netflix's lists as they are (cartoons too), the rest of the rows are filtered.
         for (Rows.Row row : rowsData.rows()) if (!row.square && !row.ranked) all.addAll(row.items);
@@ -3807,7 +3820,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         orb(c, cx + w * 0.30f * (float) Math.cos(t / 6.7), cy + hh * 0.34f * (float) Math.sin(t / 5.9), w * 0.5f, 0x80FF4F8B);
         orb(c, cx + w * 0.34f * (float) Math.sin(t / 7.9 + 2), cy + hh * 0.28f * (float) Math.cos(t / 6.3 + 1), w * 0.45f, 0x66FFB340);
         c.restore();
-        tileFill.setShader(new LinearGradient(0, cell.top, 0, cell.top + hh * 0.5f, 0x1FFFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP));
+        if (surpriseSheen == null || sheenH != hh) {
+            surpriseSheen = new LinearGradient(0, 0, 0, hh * 0.5f, 0x1FFFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP);
+            sheenH = hh;
+        }
+        orbMatrix.setTranslate(0, cell.top);
+        surpriseSheen.setLocalMatrix(orbMatrix);
+        tileFill.setShader(surpriseSheen);
         c.drawRoundRect(cell, r, r, tileFill);
         tileFill.setShader(null);
         rim.setShader(null);
@@ -3820,8 +3839,22 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         c.drawText(q, cx - surpriseLabel.measureText(q) / 2, cy + 56 * k, surpriseLabel);
     }
 
+    /** One soft light per color, made once at unit size; each frame only moves and scales it. */
+    private final Map<Integer, Shader> orbs = new HashMap<>();
+    private final android.graphics.Matrix orbMatrix = new android.graphics.Matrix();
+    private Shader surpriseSheen;
+    private float sheenH;
+
     private void orb(Canvas c, float x, float y, float radius, int color) {
-        tileFill.setShader(new android.graphics.RadialGradient(x, y, radius, color, color & 0x00FFFFFF, Shader.TileMode.CLAMP));
+        Shader s = orbs.get(color);
+        if (s == null) {
+            s = new android.graphics.RadialGradient(0, 0, 1, color, color & 0x00FFFFFF, Shader.TileMode.CLAMP);
+            orbs.put(color, s);
+        }
+        orbMatrix.setScale(radius, radius);
+        orbMatrix.postTranslate(x, y);
+        s.setLocalMatrix(orbMatrix);
+        tileFill.setShader(s);
         c.drawCircle(x, y, radius, tileFill);
         tileFill.setShader(null);
     }
@@ -4041,13 +4074,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private void drawCaptions(Canvas c, RectF base, Recs.Pick p, float f) {
         float bw = base.width();
-        fitPaint.set(rowCardTitle);
-        if (p.title != null) c.drawText(TextUtils.ellipsize(p.title, fitPaint, bw, TextUtils.TruncateAt.END).toString(),
-                base.left, base.bottom + (44 + 12 * f) * k, rowCardTitle);
-        if (p.meta != null && !p.meta.isEmpty()) {
+        // Cut once, not on every frame of a scroll (each cut allocates): again only when the text or the width changes.
+        if (p.fitTitleOf != p.title || p.fitMetaOf != p.meta || p.fitWidth != bw) {
+            p.fitTitleOf = p.title;
+            p.fitMetaOf = p.meta;
+            p.fitWidth = bw;
+            fitPaint.set(rowCardTitle);
+            p.fitTitle = p.title == null ? null : TextUtils.ellipsize(p.title, fitPaint, bw, TextUtils.TruncateAt.END).toString();
             fitPaint.set(rowCardMeta);
-            c.drawText(TextUtils.ellipsize(p.meta, fitPaint, bw, TextUtils.TruncateAt.END).toString(), base.left, base.bottom + (74 + 12 * f) * k, rowCardMeta);
+            p.fitMeta = p.meta == null || p.meta.isEmpty() ? null : TextUtils.ellipsize(p.meta, fitPaint, bw, TextUtils.TruncateAt.END).toString();
         }
+        if (p.fitTitle != null) c.drawText(p.fitTitle, base.left, base.bottom + (44 + 12 * f) * k, rowCardTitle);
+        if (p.fitMeta != null) c.drawText(p.fitMeta, base.left, base.bottom + (74 + 12 * f) * k, rowCardMeta);
     }
 
     /** "Remove animations" (or animator scale 0) in the TV's settings: no tilt, no zoom. */

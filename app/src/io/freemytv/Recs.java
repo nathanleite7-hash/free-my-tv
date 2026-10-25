@@ -56,6 +56,8 @@ final class Recs {
         String genre;           // its first genre (the hero mixes them)
         boolean animation;      // TMDB's Animation genre (the hero shows one at most)
         String poster;          // Rows: TMDB's poster (the Top 10's portrait cards)
+        String fitTitle, fitMeta, fitTitleOf, fitMetaOf;   // the captions as drawn (cut to the card), kept between frames
+        float fitWidth;
     }
 
     interface Listener { void onRecs(); }

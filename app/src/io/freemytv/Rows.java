@@ -97,6 +97,7 @@ final class Rows {
     private final Map<String, Card> cards = new LinkedHashMap<>(16, 0.75f, true);   // least recently drawn first
     private final Set<String> loading = new HashSet<>(), failed = new HashSet<>();
     private volatile List<Row> rows = new ArrayList<>();
+    private volatile int version;   // bumps with every new set of lists
     /** Surprise me's pool: a few hundred titles from the TV's services (Netflix's most), beyond what the rows show. */
     private volatile List<Recs.Pick> pool = new ArrayList<>();
     private volatile boolean fetching;
@@ -121,6 +122,10 @@ final class Rows {
 
     void addListener(Listener l) { if (!listeners.contains(l)) listeners.add(l); }
     void removeListener(Listener l) { listeners.remove(l); }
+
+    int version() {
+        return version;
+    }
 
     List<Recs.Pick> pool() {
         return Recs.hasKey(context) ? pool : new ArrayList<>();
@@ -150,6 +155,7 @@ final class Rows {
                 List<Row> next = fetch();
                 if (next.isEmpty()) throw new IOException("no rows");
                 rows = next;
+                version++;
                 List<Row> wrapped = new ArrayList<>();
                 wrapped.add(new Row("pool", "", pool, false));
                 fetchedAt = System.currentTimeMillis();
