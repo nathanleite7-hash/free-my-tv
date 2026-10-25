@@ -92,10 +92,14 @@ final class Recent {
         return Ui.plural("plural|one:{n} day ago|other:{n} days ago", minutes / 1440);
     }
 
-    /** Takes the i-th (newest first) out. */
-    static synchronized void remove(Context c, int index) {
+    /** Takes this one out (by its title and app). */
+    static synchronized void remove(Context c, Recs.Pick p) {
         JSONArray old = read(c), next = new JSONArray();
-        for (int i = 0; i < old.length(); i++) if (i != index) next.put(old.opt(i));
+        for (int i = 0; i < old.length(); i++) {
+            JSONObject o = old.optJSONObject(i);
+            if (o != null && o.optString("title").equals(p.title) && o.optString("pkg").equals(p.pkg)) continue;
+            next.put(o);
+        }
         write(c, next);
     }
 

@@ -228,36 +228,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private StaticLayout heroDesc;
     private Shader barScrim, tileGray;
     private String dollarText = "", dollarChange = "";
-    /** The event's name in the bar: always cut at the same length, so the bar never jumps around. */
-    private static final int EVENT_CHARS = 22;
-
-    /** A calendar page, drawn as the weather's symbols are: an outline, the rings on top, today's date inside. */
-    private void calendarIcon(Canvas c, float cx, float cy, float size, int ink) {
-        float w = size, h = size * 0.92f, r = size * 0.18f;
-        RectF b = cell;
-        b.set(cx - w / 2, cy - h / 2 + size * 0.04f, cx + w / 2, cy + h / 2 + size * 0.04f);
-        calStroke.setColor(ink);
-        calStroke.setStrokeWidth(Math.max(1.5f, size * 0.09f));
-        c.drawRoundRect(b, r, r, calStroke);
-        c.drawLine(b.left, b.top + h * 0.3f, b.right, b.top + h * 0.3f, calStroke);
-        c.drawLine(cx - w * 0.22f, b.top - size * 0.1f, cx - w * 0.22f, b.top + size * 0.08f, calStroke);
-        c.drawLine(cx + w * 0.22f, b.top - size * 0.1f, cx + w * 0.22f, b.top + size * 0.08f, calStroke);
-        String day = String.valueOf(java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_MONTH));
-        calDay.setColor(ink);
-        calDay.setTextSize(size * 0.46f);
-        c.drawText(day, cx - calDay.measureText(day) / 2, b.top + h * 0.3f + (h * 0.7f + Ui.cap(calDay)) / 2, calDay);
-    }
-
-    private final Paint calStroke = strokePaint();
     private final Paint dollarSign = Ui.text(Ui.semibold, 30, 0xFFFFFFFF);
-    private final Paint calDay = Ui.numbers(Ui.bold, 12, 0xFFFFFFFF);
-
-    private static Paint strokePaint() {
-        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeCap(Paint.Cap.ROUND);
-        return p;
-    }
     private long dollarAt = -1;
     private final RectF barRect = new RectF();
 
@@ -485,8 +456,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             data.refreshIfStale();
             recs.refreshIfStale();
             rowsData.refreshIfStale();
-        Agenda.get().refreshIfStale(() -> { statusDirty = true; status.invalidate(); });
-            Agenda.get().refreshIfStale(() -> { statusDirty = true; status.invalidate(); });
             checkNotices();
             updatePalette();
             checkNight(true);
@@ -2712,7 +2681,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                         okDown = true;
                         okHeld = false;
                         handler.removeCallbacks(holdStart);
-                        holdArmed = sheetOpen ? canToggleShelf(gridIndex) : canReorder();
+                        holdArmed = sheetOpen ? canToggleShelf(gridIndex) : canReorder() || onRecent();
                         if (holdArmed) handler.postDelayed(holdStart, HOLD_MS);
                     } else if (okDown && holdArmed && e.isLongPress()) {
                         hold();
@@ -3010,11 +2979,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     // MARK: - Holding OK: All Apps puts the app on the shelf or takes it off; on the shelf, the app is lifted to move
 
+    /** The focus is on a card of "Recently watched". */
+    private boolean onRecent() {
+        return !sheetOpen && zone == Z_ROWS && rowIndex < rowTitles.size() && rowTitles.get(rowIndex).equals(Ui.tr("Recently watched"))
+                && rowCol < rowList(rowIndex).size();
+    }
+
     private void hold() {
-        if (!sheetOpen && zone == Z_ROWS && rowIndex < rowTitles.size() && rowTitles.get(rowIndex).equals(Ui.tr("Recently watched"))) {
-            // Holding OK on something you watched takes it out of the row.
-            String title = rowCol < rowList(rowIndex).size() ? rowList(rowIndex).get(rowCol).title : "";
-            Recent.remove(getContext(), rowCol);
+        if (onRecent()) {
+            // Holding OK on something you watched takes it out of the row (the release opens nothing).
+            okHeld = true;
+            holdArmed = false;
+            Recs.Pick gone = rowList(rowIndex).get(rowCol);
+            String title = gone.title;
+            Recent.remove(getContext(), gone);
             click.back();
             showToast(Ui.trf("“{title}” left Recently watched.", "title", title));
             updatePicks();
@@ -3284,10 +3262,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 if (i >= others.size()) return "";
                 return label(others, i) + ", " + Ui.trf("{i} of {n}", "i", i + 1, "n", others.size());
             case Z_TOP:
-                if (i == GLANCE) {
-                    Agenda.Event ev = Agenda.get().next();
-                    return (ev == null ? "" : ev.title + ". ") + Ui.tr("Dollar, weather and time. OK opens the widgets.");
-                }
+                if (i == GLANCE) return Ui.tr("Dollar, weather and time. OK opens the widgets.");
                 if (i == SEARCH) return Ui.tr("Search");
                 if (i >= 3) return label(lightButtons, i - 3);
                 return Ui.trf("{name}, tab {i} of {n}", "name", tabs()[i], "i", i + 1, "n", 3);
@@ -4624,19 +4599,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             float sw = dollarSign.measureText("$");
             c.drawText("$", right - pw - 10 * k - sw, base, dollarSign);
             right -= pw + 10 * k + sw;
-        }
-        Agenda.Event ev = Agenda.get().next();
-        if (ev != null) {
-            right -= 24 * k;
-            fill.setShader(null);
-            fill.setColor(0x2EFFFFFF);
-            c.drawRect(right, cy - 16 * k, right + 1.5f * k, cy + 16 * k, fill);
-            right -= 24 * k;
-            String name = ev.title.length() > EVENT_CHARS ? ev.title.substring(0, EVENT_CHARS).trim() + "…" : ev.title;
-            float nw = barDim.measureText(name), size = 27 * k;
-            c.drawText(name, right - nw, base, barDim);
-            calendarIcon(c, right - nw - 12 * k - size / 2, cy, size, symbolInk);
-            right -= nw + 12 * k + size;
         }
         right -= 22 * k;
         glanceRect.set(right + 6 * k, cy - BAR_H / 2 * k + 4 * k, glanceRight, cy + BAR_H / 2 * k - 4 * k);
