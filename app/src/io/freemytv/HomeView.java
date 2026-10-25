@@ -189,7 +189,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private Paint hEyebrow, hTitle, hMeta, hButton, appsTitle, barTab, barText, barDim, barLabel, barChange, chipText;
     private TextPaint hDesc;
     private StaticLayout heroDesc;
-    private Shader barScrim;
+    private Shader barScrim, tileGray;
     private String dollarText = "", dollarChange = "";
     private long dollarAt = -1;
     private final RectF barRect = new RectF();
@@ -1548,6 +1548,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 tileShaderH = bh;
                 specTile = null;
                 tileGlow = new LinearGradient(0, -bh / 2, 0, 0, 0x14FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP);
+                tileGray = null;
             }
             if (tileShaders[i] == null) {
                 int[] deep = BRAND_DEEP.get(it.key);
@@ -1559,9 +1560,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             c.translate(cx, cy);
             c.scale(s, s);
             tmp.set(-bw / 2, -bh / 2, bw / 2, bh / 2);
+            boolean gray = picksOn() && BRAND_DEEP.containsKey(it.key);
+            if (gray) {
+                // At rest, Apple TV+ gray; focused, the brand's glow comes in.
+                if (tileGray == null) tileGray = new LinearGradient(0, -bh / 2, 0, bh / 2, 0xFF3A3A3E, 0xFF2A2A2E, Shader.TileMode.CLAMP);
+                tileFill.setShader(tileGray);
+                tileFill.setAlpha(255);
+                c.drawRoundRect(tmp, r0, r0, tileFill);
+            }
             tileFill.setShader(tileShaders[i]);
+            tileFill.setAlpha(gray ? Math.round(255 * fc) : 255);
+            if (!gray || fc > 0.004f) c.drawRoundRect(tmp, r0, r0, tileFill);
             tileFill.setAlpha(255);
-            c.drawRoundRect(tmp, r0, r0, tileFill);
             if (fc > 0.01f) {
                 tileFill.setShader(tileGlow);
                 tileFill.setAlpha(Math.round(255 * fc));
@@ -1570,7 +1580,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
             tileFill.setShader(null);
             c.restore();
-            Backdrop scene = picksOn() && fc > 0.01f && it.pkg != null && i == sceneIndex ? appScene.get(it.pkg) : null;
+            Backdrop scene = null;   // no scene photo in the tile: most apps had none, and it hid the brand
             if (scene != null) {
                 // Waits SCENE_DELAY_MS (just passing through shows nothing), fades in, then zooms out slowly and settles.
                 float t = (SystemClock.uptimeMillis() - sceneAt - SCENE_DELAY_MS) / 1000f;
@@ -1583,7 +1593,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     c.drawRoundRect(cell, r, r, tileFill);
                 }
             }
-            drawLogo(c, it, cell, s, picksOn() && BRAND_DEEP.containsKey(it.key) || scene != null && fc > 0.5f ? 1 : style[2]);
+            drawLogo(c, it, cell, s, picksOn() && BRAND_DEEP.containsKey(it.key) ? 0 : style[2]);   // the brand's own logo, in color
         } else if (it.logo != null) {
             tileFill.setShader(null);
             tileFill.setColor(0xFF161618);
@@ -3160,19 +3170,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** The background follows the focus: the row card's photo there, the hero's pick everywhere else. */
     private void followBackdrop() {
-        if (zone == Z_SHELF && shelfIndex < shelf.size() && shelf.get(shelfIndex).pkg != null) {
-            Backdrop scene = appScene.get(shelf.get(shelfIndex).pkg);
-            if (scene != null) {
-                showBackdrop(scene);
-                return;
-            }
-        }
+        if (zone == Z_SHELF) return;   // the apps keep the hero's background
         Recs.Pick rp = zone == Z_ROWS && rowCol < rowList(rowIndex).size() ? rowList(rowIndex).get(rowCol) : null;
-        if (rp != null && rp.recentApp) {
-            Backdrop scene = appScene.get(rp.pkg);
-            if (scene != null) showBackdrop(scene);
-            return;
-        }
+        if (rp != null && rp.recentApp) return;
         Recs.Pick p = zone == Z_ROWS ? rp
                 : cards.isEmpty() ? null : cards.get(Math.min(cardIndex, cards.size() - 1));
         Backdrop b = p == null ? null : recs.backdrop(p);
@@ -3253,17 +3253,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 recentMatrix.postTranslate(cell.left, cell.top);
                 g.setLocalMatrix(recentMatrix);
             }
-            fill.setShader(g);
-            fill.setColor(0xFF2C2C2E);
+            fill.setShader(null);
+            fill.setColor(0xFF323236);
             c.drawRoundRect(cell, r0 * s, r0 * s, fill);
+            if (g != null && f > 0.004f) {
+                fill.setShader(g);
+                fill.setAlpha(Math.round(255 * f));
+                c.drawRoundRect(cell, r0 * s, r0 * s, fill);
+                fill.setAlpha(255);
+            }
             fill.setShader(null);
             if (app != null && app.logo != null) {
                 float lh = 64 * k * s, lw = Math.min(240 * k * s, app.logo.getWidth() * lh / app.logo.getHeight());
                 lh = app.logo.getHeight() * lw / app.logo.getWidth();
                 tmp.set(cell.centerX() - lw / 2, cell.centerY() - lh / 2, cell.centerX() + lw / 2, cell.centerY() + lh / 2);
-                bitmapPaint.setColorFilter(whiteLogo);
                 c.drawBitmap(app.logo, null, tmp, bitmapPaint);
-                bitmapPaint.setColorFilter(null);
             }
         }
         if (f > 0.01f) {

@@ -1253,7 +1253,7 @@ public class SettingsActivity extends Activity {
         private final android.graphics.PorterDuffColorFilter whiteInk =
                 new android.graphics.PorterDuffColorFilter(0xFFFFFFFF, android.graphics.PorterDuff.Mode.SRC_IN);
 
-        /** A small card like the shelf's: the white logo on the brand's deep gradient (or the name). Returns its right edge. */
+        /** A small card like the shelf's focused tile: the brand's logo on its deep gradient. Returns its right edge. */
         private float drawMini(Canvas c, String pkg, float left, float cy, boolean lit) {
             float mw = 96 * k, mh = 54 * k;
             Object[] m = minis.get(pkg);
@@ -1288,9 +1288,7 @@ public class SettingsActivity extends Activity {
                 float lw = logo.getWidth() * s, lh = logo.getHeight() * s;
                 RectF dst = miniDst;
                 dst.set(left + (mw - lw) / 2, cy - lh / 2, left + (mw + lw) / 2, cy + lh / 2);
-                miniPaint.setColorFilter(whiteInk);
-                c.drawBitmap(logo, null, dst, miniPaint);
-                miniPaint.setColorFilter(null);
+                c.drawBitmap(logo, null, dst, miniPaint);   // the brand's own logo, in color
             }
             return left + mw;
         }
