@@ -90,8 +90,10 @@ final class HomeApps {
      */
     private static final String[][] SHELF = {
         {"netflix", "Netflix", "com.netflix.ninja", "E50914", "", "1"},
+        {"spotify", "Spotify", "com.spotify.tv.android", "1DB954", "", "1"},
         {"youtube", "YouTube", "com.google.android.youtube.tv", "FF0033", "play", "1"},
         {"youtube", "YouTube", "com.amazon.firetv.youtube", "FF0033", "play", "1"},
+        {"stremio", "Stremio", "com.stremio.one", "7B5BF5", "", "1"},
         {"prime", "Prime Video", "com.amazon.amazonvideo.livingroom", "1A98FF", "tint", "0.96"},
         {"prime", "Prime Video", "com.amazon.firebat", "1A98FF", "tint", "0.96"},
         {"prime", "Prime Video", "com.amazon.avod", "1A98FF", "tint", "0.96"},
@@ -114,7 +116,6 @@ final class HomeApps {
         {"premier", "Premier", "gpm.tnt_premier", "FF2D55", "", "1"},
         {"amediateka", "Амедиатека", "ru.amediateka", "E31E24", "", "1"},
         {"wink", "Wink", "ru.rt.video.app.tv", "FF5A1F", "", "1"},
-        {"spotify", "Spotify", "com.spotify.tv.android", "1DB954", "", "1"},
     };
     /**
      * Apps the shelf shows at once (it scrolls for the rest): 8, today's smallest tiles (178 wide in HomeView's 1760 of
