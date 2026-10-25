@@ -108,6 +108,10 @@ final class Prefs {
         version++;
     }
 
+    /** The day (yyyymmdd) the eye-care reminder last showed: once an evening. */
+    static int eyeCareDay() { return sp().getInt("eyeCareDay", 0); }
+    static void setEyeCareDay(int day) { sp().edit().putInt("eyeCareDay", day).apply(); }
+
     // MARK: - Language and units
 
     /** "auto" or a language code as picked ("pt", "fr", "zh-CN"…); Ui.applyLanguage finds its catalogue. */

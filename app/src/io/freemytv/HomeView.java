@@ -154,7 +154,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static final float RANK_CARD_W = 162, RANK_CARD_H = 243, RANK_SIZE = 334, RANK_OVERLAP = 44;
     /** Spotify's playlists: square covers, larger than the cards (Apple Music's shelf). */
     private static final float SQUARE = 300;
-    private Paint rankPaint, rankFill, rowSubPaint;
+    private Paint rankPaint, rankFill, rowSubPaint, surpriseLabel;
     /** Where each item starts in its row (1080p px, before the row's scroll). */
     private final float[][] rowX = new float[MAX_ROWS][MAX_ITEMS];
     private final float[] rowEnd = new float[MAX_ROWS];   // where the row's last item ends
@@ -531,6 +531,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (running) return;
         running = true;
         if (!searchResults.isEmpty() && SystemClock.uptimeMillis() - searchAt > 15 * 60_000L) searchResults = new ArrayList<>();
+        handler.postDelayed(this::eyeCare, 2500);
         checkNight(false);
         boolean h24 = Prefs.clock24();
         if (h24 != clock24) {   // 12/24 hours changed in the TV's settings: the clock and the drawer's times again
@@ -661,6 +662,22 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     @Override public void onRecs() {
         wake();
         updatePicks();
+    }
+
+    /**
+     * Once an evening, after sunset: a reminder that the TV's Eye Care (in Picture) makes the screen easier on tired
+     * eyes, and the drawer's Picture shortcut says it for the rest of the night.
+     */
+    private void eyeCare() {
+        if (!running || !picksOn()) return;
+        HomeData.Weather wx = data.weather;
+        long now = System.currentTimeMillis();
+        if (wx.sunset == 0 || now < wx.sunset) return;
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        int day = cal.get(java.util.Calendar.YEAR) * 10000 + (cal.get(java.util.Calendar.MONTH) + 1) * 100 + cal.get(java.util.Calendar.DAY_OF_MONTH);
+        if (cal.get(java.util.Calendar.HOUR_OF_DAY) < 5 || Prefs.eyeCareDay() == day) return;   // after midnight: the evening's already been
+        Prefs.setEyeCareDay(day);
+        showToast(Ui.tr("It's dark out: Eye Care in Picture (the drawer) is easier on the eyes."));
     }
 
     /** The track changed, or it was paused or played: the hero's first slide follows (only when something changed). */
@@ -817,6 +834,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         rankFill.setStyle(Paint.Style.FILL);
         rankOutlines.clear();
         rowSubPaint = Ui.text(Ui.medium, 22 * k, 0x8CEBEBF5);
+        surpriseLabel = Ui.text(Ui.bold, 30 * k, 0xFFFFFFFF);
+        surpriseLabel.setLetterSpacing(-0.01f);
         rowCardTitle = Ui.text(Ui.semibold, 25 * k, 0xF2FFFFFF);
         rowCardTitle.setLetterSpacing(-0.01f);
         rowCardMeta = Ui.text(Ui.medium, 20 * k, 0x9EFFFFFF);
@@ -887,7 +906,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         glanceFocus.target = !sheetOpen && zone == Z_TOP && topIndex == GLANCE ? 1 : 0;
         searchFocus.target = !sheetOpen && zone == Z_TOP && topIndex == SEARCH ? 1 : 0;
         boolean topMoving = step(topFocus, dt) | glanceFocus.step(dt) | searchFocus.step(dt), cardsMoving = step(cardFocus, dt);
-        boolean rowsMoving = false, scrolling = scrollY.step(dt);
+        boolean rowsMoving = spinning() || (zone == Z_ROWS && rowCol == 0 && rowIndex < rowItems.size()
+                && !rowItems.get(rowIndex).isEmpty() && "surprise".equals(rowItems.get(rowIndex).get(0).kind)), scrolling = scrollY.step(dt);
         for (int r = 0; r < rowItems.size() && r < MAX_ROWS; r++) rowsMoving |= step(rowFocus[r], dt) | rowShift[r].step(dt);
         if (rowsMoving) positionRows();
         boolean tilting = tiltX.step(dt) | tiltY.step(dt);
@@ -2044,6 +2064,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (top >= 0) drawPanelItem(c, top);
     }
 
+    private boolean night() {
+        HomeData.Weather wx = data.weather;
+        long now = System.currentTimeMillis();
+        return wx.sunset != 0 && (now >= wx.sunset || (wx.sunrise != 0 && now < wx.sunrise));
+    }
+
     /** A shortcut: its symbol and name on a faint fill; focused, white with dark ink, a little larger. */
     private void drawPanelItem(Canvas c, int i) {
         HomeApps.Item it = drawerItems.get(i);
@@ -2063,7 +2089,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         pItem.setTextSize(23 * k * s);
         fitPaint.set(pItem);
         float room = cell.right - 18 * k - (ix + sw + 16 * k * s);
-        String label = TextUtils.ellipsize(it.label, fitPaint, room, TextUtils.TruncateAt.END).toString();
+        String name = "picture".equals(it.key) && night() ? Ui.tr("Eye Care") : it.label;   // at night, what it's for
+        String label = TextUtils.ellipsize(name, fitPaint, room, TextUtils.TruncateAt.END).toString();
         c.drawText(label, ix + sw + 16 * k * s, cy + Ui.halfCap(pItem), pItem);
         pItem.setTextSize(23 * k);
     }
@@ -2876,7 +2903,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         } else if (zone == Z_ROWS) {
             List<Recs.Pick> list = rowList(rowIndex);
             Recs.Pick p = rowCol < list.size() ? list.get(rowCol) : null;
-            if (p == null || p.pkg == null) return;
+            if (p == null || (p.pkg == null && !"surprise".equals(p.kind))) return;
+            if ("surprise".equals(p.kind)) {
+                if (surpriseLanded == null || spinning()) {
+                    click.open();
+                    spin();
+                    rowsDirty = true;
+                    return;
+                }
+                p = surpriseLanded;   // landed: OK opens it
+            }
             it = p.recentApp ? HomeApps.app(p.pkg, p.title, null) : HomeApps.app(p.pkg, Recs.serviceName(p), p.link);
             if (p.recentApp) it.key = p.app;
             else openedPick = p;
@@ -3510,6 +3546,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             ranked.add(false);
             square.add(false);
         }
+        // "To watch together": "Surprise me" first, then titles in the genres you two keep coming back to.
+        List<Recs.Pick> together = together(recent);
+        if (!together.isEmpty()) {
+            items.add(together);
+            titles.add(Ui.tr("To watch together"));
+            subtitles.add(togetherWhy);
+            ranked.add(false);
+            square.add(false);
+            chips.add(true);
+        }
         for (Rows.Row row : rowsData.rows()) {
             if (items.size() >= MAX_ROWS) break;
             if (row.square) continue;   // already under the apps
@@ -3588,6 +3634,128 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private float rowHeight(int r) {
         float card = ranked(r) ? RANK_CARD_H : square(r) ? SQUARE : ROW_CARD_H;
         return ROW_TITLE_TO_CARD + card + (ranked(r) ? 0 : ROW_CAPTIONS) + ROW_AIR + ROW_TITLE_CAP;
+    }
+
+    // MARK: - To watch together, and Surprise me
+
+    private final Recs.Pick surprise = new Recs.Pick();
+    private List<Recs.Pick> surprisePool = new ArrayList<>();
+    private Recs.Pick surpriseLanded;
+    private long surpriseAt;
+    private int surpriseFrom;
+    private String togetherWhy = "";
+    private static final long SPIN_MS = 1700;
+    private static final int SPIN_STEPS = 22;
+
+    /**
+     * The genres in "Recently watched" (two at most, the most frequent), and every title in the rows in those genres
+     * that you haven't opened. With nothing watched yet, the rows' titles as they come. "Surprise me" leads it.
+     */
+    private List<Recs.Pick> together(List<Recs.Pick> recent) {
+        List<Recs.Pick> all = new ArrayList<>();
+        // Not the Top 10s: they're Netflix's lists as they are (cartoons too), the rest of the rows are filtered.
+        for (Rows.Row row : rowsData.rows()) if (!row.square && !row.ranked) all.addAll(row.items);
+        if (all.size() < 6) return new ArrayList<>();
+        java.util.Set<String> skip = new java.util.HashSet<>(java.util.Arrays.asList(Ui.tr("Series"), Ui.tr("Movie")));
+        for (String s : Recs.SERVICE_NAMES.values()) skip.add(s);
+        // The genres the rows know (so "now", a year or a service never count as one), and how common each is there.
+        Map<String, Integer> known = new HashMap<>();
+        for (Recs.Pick p : all) {
+            for (String part : (p.meta == null ? "" : p.meta).split(" · ")) {
+                if (!part.isEmpty() && !skip.contains(part) && !Character.isDigit(part.charAt(0))) known.put(part, known.getOrDefault(part, 0) + 1);
+            }
+        }
+        Map<String, Integer> count = new HashMap<>();
+        java.util.Set<String> watched = new java.util.HashSet<>();
+        for (Recs.Pick p : recent) {
+            if (p.recentApp || "playlist".equals(p.kind)) continue;
+            watched.add(p.title);
+            String meta = p.baseMeta == null ? "" : p.baseMeta;
+            for (String part : meta.split(" · ")) {
+                if (!known.containsKey(part)) continue;
+                count.put(part, count.getOrDefault(part, 0) + 1);
+            }
+        }
+        List<String> genres = new ArrayList<>(count.keySet());
+        // The most watched first; a tie goes to the genre with more titles to offer.
+        java.util.Collections.sort(genres, (a, b) -> !count.get(b).equals(count.get(a)) ? count.get(b) - count.get(a) : known.get(b) - known.get(a));
+        if (genres.size() > 2) genres = genres.subList(0, 2);
+        List<Recs.Pick> out = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (Recs.Pick p : all) {
+            if (watched.contains(p.title) || !seen.add(Recs.key(p))) continue;
+            boolean match = genres.isEmpty();
+            for (String g : genres) match |= p.meta != null && java.util.Arrays.asList(p.meta.split(" · ")).contains(g);
+            if (match) out.add(p);
+        }
+        if (out.size() < 4) return new ArrayList<>();
+        if (surpriseLanded == null && !spinning()) surprisePool = new ArrayList<>(out);   // a spin keeps its own
+        togetherWhy = genres.isEmpty() ? "" : Ui.trf("because you watch {genres}", "genres", String.join(Ui.tr(" and "), genres));
+        if (out.size() > MAX_ITEMS - 1) out = new ArrayList<>(out.subList(0, MAX_ITEMS - 1));
+        surprise.kind = "surprise";
+        surprise.id = -1;
+        boolean landed = surpriseLanded != null && !spinning();
+        surprise.title = landed ? surpriseLanded.title : Ui.tr("Surprise me");
+        surprise.meta = landed ? Ui.tr("OK to watch · ← → for another") : spinning() ? Ui.tr("Shuffling…") : Ui.tr("A title for the two of you");
+        out.add(0, surprise);
+        return out;
+    }
+
+    private boolean spinning() {
+        return surpriseAt != 0 && SystemClock.uptimeMillis() - surpriseAt < SPIN_MS;
+    }
+
+    /** OK on "Surprise me": the covers shuffle, slowing down like a wheel, and land on one. OK again opens it. */
+    private void spin() {
+        List<Recs.Pick> ready = new ArrayList<>();
+        for (Recs.Pick p : surprisePool) if (rowsData.card(p) != null) ready.add(p);
+        if (ready.size() < 3) ready = surprisePool;
+        if (ready.isEmpty()) return;
+        surprisePool = ready;
+        surpriseFrom = (int) (Math.random() * ready.size());
+        surpriseAt = SystemClock.uptimeMillis();
+        surpriseLanded = ready.get((surpriseFrom + SPIN_STEPS) % ready.size());
+        surprise.title = Ui.tr("Surprise me");
+        surprise.meta = Ui.tr("Shuffling…");
+        handler.postDelayed(() -> {
+            if (surpriseLanded == null) return;
+            surprise.title = surpriseLanded.title;
+            surprise.meta = Ui.tr("OK to watch · ← → for another");
+            click.open();
+            rowsDirty = true;
+            rowsLayer.invalidate();
+        }, SPIN_MS);
+    }
+
+    /** The card: a slowly turning gradient of warm and cool light with sparkles; while spinning, the covers. */
+    private void drawSurprise(Canvas c, RectF cell, float r, float f) {
+        long now = SystemClock.uptimeMillis();
+        Rows.Card shown = null;
+        if (spinning() || surpriseLanded != null) {
+            float u = Math.min(1, (now - surpriseAt) / (float) SPIN_MS);
+            int step = (int) (SPIN_STEPS * (1 - Math.pow(1 - u, 3)));
+            Recs.Pick p = !spinning() ? surpriseLanded
+                    : surprisePool.isEmpty() ? null : surprisePool.get((surpriseFrom + step) % surprisePool.size());
+            shown = p == null ? null : rowsData.card(p);
+        }
+        if (shown != null) {
+            drawCover(c, shown.bitmap, shown.shader, cell, r, 1);
+            if (spinning()) {   // a soft veil while it moves: the eye reads motion, not each cover
+                tileFill.setShader(null);
+                tileFill.setColor(0x33000000);
+                c.drawRoundRect(cell, r, r, tileFill);
+            }
+            return;
+        }
+        float t = (now % 12000) / 12000f, a = (float) (t * 2 * Math.PI);
+        float cx = cell.centerX(), cy = cell.centerY(), dx = (float) Math.cos(a) * cell.width() * 0.5f, dy = (float) Math.sin(a) * cell.height() * 0.5f;
+        tileFill.setShader(new LinearGradient(cx - dx, cy - dy, cx + dx, cy + dy, new int[] {0xFF4B2BFF, 0xFFE0338A, 0xFFFF9F0A},
+                new float[] {0, 0.55f, 1}, Shader.TileMode.CLAMP));
+        c.drawRoundRect(cell, r, r, tileFill);
+        tileFill.setShader(null);
+        Symbols.draw(getContext(), c, "sparkles", cx, cy - 14 * k, (64 + 10 * f) * k, 0xF2FFFFFF);
+        String q = Ui.tr("Surprise me");
+        c.drawText(q, cx - surpriseLabel.measureText(q) / 2, cy + 60 * k, surpriseLabel);
     }
 
     /** Where row r sits on the page (only rows with something in them are kept). */
@@ -3743,6 +3911,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         shadowDeep.setColor(Ui.alpha(0xFF000000, 0.35f + 0.3f * f));
         shadows.draw(c, tmp, r0, DEEP_BLUR * k, shadowDeep);
         c.restore();
+        if ("surprise".equals(p.kind)) {
+            drawSurprise(c, cell, r0 * s, f);
+            if (tilted) c.restore();
+            drawCaptions(c, base, p, f);
+            return;
+        }
         Rows.Card card = p.recentApp ? null : (ranked(r) || square(r)) && p.poster != null ? rowsData.poster(p) : rowsData.card(p);
         Backdrop b = card != null || p.recentApp ? null : recs.backdropIfOnDisk(p);
         if (card != null || b != null && b.wide != null) {
@@ -3794,6 +3968,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         if (tilted) c.restore();
         if (ranked(r)) return;   // the poster carries the title
+        drawCaptions(c, base, p, f);
+    }
+
+    private void drawCaptions(Canvas c, RectF base, Recs.Pick p, float f) {
+        float bw = base.width();
         fitPaint.set(rowCardTitle);
         if (p.title != null) c.drawText(TextUtils.ellipsize(p.title, fitPaint, bw, TextUtils.TruncateAt.END).toString(),
                 base.left, base.bottom + (44 + 12 * f) * k, rowCardTitle);
@@ -4472,6 +4651,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 List<Recs.Pick> list = rowList(rowIndex);
                 if (dx != 0) {
                     int next = Math.max(0, Math.min(list.size() - 1, rowCol + dx));
+                    if (rowCol == 0 && "surprise".equals(list.get(0).kind) && surpriseLanded != null && !spinning()) {
+                        spin();   // landed: ← → shuffle again
+                        click.move();
+                        rowsDirty = true;
+                        return true;
+                    }
                     if (next == rowCol) return true;
                     rowCol = next;
                 } else {
