@@ -37,7 +37,7 @@ public final class NowPlayingActivity extends Activity {
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Ui.init(this);
-        view = new NowPlayingView(this);
+        view = new NowPlayingView(this, this, false);
         setContentView(view);
     }
 
@@ -57,7 +57,8 @@ public final class NowPlayingActivity extends Activity {
 
     static final class NowPlayingView extends View implements Choreographer.FrameCallback, NowPlaying.Listener {
         private static final int PREV = 0, PLAY = 1, NEXT = 2, OPEN = 3;
-        private final NowPlayingActivity activity;
+        private final NowPlayingActivity activity;   // null in the screensaver
+        private final boolean ambient;               // the screensaver: no controls, a clock, slower drift
         private final NowPlaying np;
         private final Click click;
         private final Shadows shadows = new Shadows();
@@ -70,7 +71,7 @@ public final class NowPlayingActivity extends Activity {
         private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG), blob = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
         private final Paint image = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
         private final Paint shade = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private Paint eyebrow, artistPaint, albumPaint, timePaint, timeRight, buttonPaint;
+        private Paint eyebrow, artistPaint, albumPaint, timePaint, timeRight, buttonPaint, clockPaint;
         private TextPaint titlePaint;
         private StaticLayout titleLayout;
         private String titleFor = "";
@@ -82,11 +83,12 @@ public final class NowPlayingActivity extends Activity {
         private int w, h;
         private float k = 1;
 
-        NowPlayingView(NowPlayingActivity a) {
-            super(a);
+        NowPlayingView(Context c, NowPlayingActivity a, boolean ambient) {
+            super(c);
             activity = a;
-            np = NowPlaying.get(a);
-            click = new Click(a);
+            this.ambient = ambient;
+            np = NowPlaying.get(c);
+            click = ambient ? null : new Click(c);
             for (int i = 0; i < colors.length; i++) colors[i] = new Spring(1.6f, 1, 0);
             setFocusable(true);
         }
@@ -149,6 +151,8 @@ public final class NowPlayingActivity extends Activity {
             timeRight = Ui.numbers(Ui.medium, 22 * k, 0x8CFFFFFF);
             timeRight.setTextAlign(Paint.Align.RIGHT);
             buttonPaint = Ui.text(Ui.semibold, 28 * k, 0xFF1C1C1E);
+            clockPaint = Ui.numbers(Ui.displaySemibold, 64 * k, 0xB3FFFFFF);
+            clockPaint.setLetterSpacing(-0.03f);
             shade.setColor(0xFF000000);
             titleFor = "";
         }
@@ -164,12 +168,12 @@ public final class NowPlayingActivity extends Activity {
                     int next = Math.max(PREV, Math.min(NEXT, focused + (e.getKeyCode() == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1)));
                     if (next != focused) {
                         focused = next;
-                        click.move();
+                        if (click != null) click.move();
                     }
                     return true;
                 case KeyEvent.KEYCODE_DPAD_CENTER:
                 case KeyEvent.KEYCODE_ENTER:
-                    if (e.getRepeatCount() > 0) return true;
+                    if (e.getRepeatCount() > 0 || click == null) return true;
                     click.open();
                     if (focused == PREV) np.previous();
                     else if (focused == NEXT) np.next();
@@ -188,8 +192,8 @@ public final class NowPlayingActivity extends Activity {
                     np.previous();
                     return true;
                 case KeyEvent.KEYCODE_BACK:
-                    click.back();
-                    activity.finish();
+                    if (click != null) click.back();
+                    if (activity != null) activity.finish();
                     return true;
                 default:
                     return false;
@@ -331,6 +335,10 @@ public final class NowPlayingActivity extends Activity {
                 c.drawRoundRect(tmp, bh / 2, bh / 2, fill);
                 c.drawText(time(np.positionNow()), x, barY + 50 * k, timePaint);
                 c.drawText("-" + time(np.duration - np.positionNow()), x + width, barY + 50 * k, timeRight);
+            }
+            if (ambient) {   // the screensaver: the time instead of the controls
+                c.drawText(Ui.clock(System.currentTimeMillis()), x, 880 * k + Ui.halfCap(clockPaint), clockPaint);
+                return;
             }
             // The controls, centered under the bar.
             float cy = 880 * k, mid = x + width / 2;

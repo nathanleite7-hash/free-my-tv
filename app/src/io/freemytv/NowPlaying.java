@@ -72,6 +72,11 @@ final class NowPlaying {
         start();
     }
 
+    /** Reads the sessions now (the screensaver decides at once whether music is playing). */
+    void prime() {
+        start();
+    }
+
     void removeListener(Listener l) {
         listeners.remove(l);
     }
