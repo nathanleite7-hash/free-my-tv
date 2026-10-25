@@ -228,6 +228,36 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private StaticLayout heroDesc;
     private Shader barScrim, tileGray;
     private String dollarText = "", dollarChange = "";
+    /** The event's name in the bar: always cut at the same length, so the bar never jumps around. */
+    private static final int EVENT_CHARS = 22;
+
+    /** A calendar page, drawn as the weather's symbols are: an outline, the rings on top, today's date inside. */
+    private void calendarIcon(Canvas c, float cx, float cy, float size, int ink) {
+        float w = size, h = size * 0.92f, r = size * 0.18f;
+        RectF b = cell;
+        b.set(cx - w / 2, cy - h / 2 + size * 0.04f, cx + w / 2, cy + h / 2 + size * 0.04f);
+        calStroke.setColor(ink);
+        calStroke.setStrokeWidth(Math.max(1.5f, size * 0.09f));
+        c.drawRoundRect(b, r, r, calStroke);
+        c.drawLine(b.left, b.top + h * 0.3f, b.right, b.top + h * 0.3f, calStroke);
+        c.drawLine(cx - w * 0.22f, b.top - size * 0.1f, cx - w * 0.22f, b.top + size * 0.08f, calStroke);
+        c.drawLine(cx + w * 0.22f, b.top - size * 0.1f, cx + w * 0.22f, b.top + size * 0.08f, calStroke);
+        String day = String.valueOf(java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_MONTH));
+        calDay.setColor(ink);
+        calDay.setTextSize(size * 0.46f);
+        c.drawText(day, cx - calDay.measureText(day) / 2, b.top + h * 0.3f + (h * 0.7f + Ui.cap(calDay)) / 2, calDay);
+    }
+
+    private final Paint calStroke = strokePaint();
+    private final Paint dollarSign = Ui.text(Ui.semibold, 30, 0xFFFFFFFF);
+    private final Paint calDay = Ui.numbers(Ui.bold, 12, 0xFFFFFFFF);
+
+    private static Paint strokePaint() {
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeCap(Paint.Cap.ROUND);
+        return p;
+    }
     private long dollarAt = -1;
     private final RectF barRect = new RectF();
 
@@ -455,6 +485,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             data.refreshIfStale();
             recs.refreshIfStale();
             rowsData.refreshIfStale();
+        Agenda.get().refreshIfStale(() -> { statusDirty = true; status.invalidate(); });
+            Agenda.get().refreshIfStale(() -> { statusDirty = true; status.invalidate(); });
             checkNotices();
             updatePalette();
             checkNight(true);
@@ -3252,7 +3284,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 if (i >= others.size()) return "";
                 return label(others, i) + ", " + Ui.trf("{i} of {n}", "i", i + 1, "n", others.size());
             case Z_TOP:
-                if (i == GLANCE) return Ui.tr("Dollar, weather and time. OK opens the widgets.");
+                if (i == GLANCE) {
+                    Agenda.Event ev = Agenda.get().next();
+                    return (ev == null ? "" : ev.title + ". ") + Ui.tr("Dollar, weather and time. OK opens the widgets.");
+                }
                 if (i == SEARCH) return Ui.tr("Search");
                 if (i >= 3) return label(lightButtons, i - 3);
                 return Ui.trf("{name}, tab {i} of {n}", "name", tabs()[i], "i", i + 1, "n", 3);
@@ -4575,26 +4610,35 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             c.drawRect(right, cy - 16 * k, right + 1.5f * k, cy + 16 * k, fill);
             right -= 24 * k;
         }
+        // The dollar and the next meeting, in the weather's manner: a quiet symbol, then the value.
+        int symbolInk = blend(0x9EFFFFFF, INK, gf);
         if (!Double.isNaN(data.prices[3])) {
             if (data.pricesAt != dollarAt) {
                 dollarAt = data.pricesAt;
-                dollarText = HomeData.brl(data.prices[3]);
-                dollarChange = Double.isNaN(data.changes[3]) ? "" : HomeData.change(data.changes[3]);
+                dollarText = HomeData.brl(data.prices[3]).replace("R$", "").trim();
             }
-            if (!dollarChange.isEmpty()) {
-                barChange.setColor(data.changes[3] >= 0 ? UP_COLOR : DOWN_COLOR);
-                float cw = barChange.measureText(dollarChange);
-                c.drawText(dollarChange, right - cw, base, barChange);
-                right -= cw + 10 * k;
-            }
-            float pw = barText.measureText(dollarText);
-            c.drawText(dollarText, right - pw, base, barText);
-            right -= pw + 12 * k;
-            String label = Ui.tr("Dollar").toUpperCase(Ui.locale());
-            float lw = barLabel.measureText(label);
-            c.drawText(label, right - lw, base, barLabel);
-            right -= lw + 28 * k;
+            float pw = barDim.measureText(dollarText);
+            c.drawText(dollarText, right - pw, base, barDim);
+            dollarSign.setColor(symbolInk);
+            dollarSign.setTextSize(30 * k);
+            float sw = dollarSign.measureText("$");
+            c.drawText("$", right - pw - 10 * k - sw, base, dollarSign);
+            right -= pw + 10 * k + sw;
         }
+        Agenda.Event ev = Agenda.get().next();
+        if (ev != null) {
+            right -= 24 * k;
+            fill.setShader(null);
+            fill.setColor(0x2EFFFFFF);
+            c.drawRect(right, cy - 16 * k, right + 1.5f * k, cy + 16 * k, fill);
+            right -= 24 * k;
+            String name = ev.title.length() > EVENT_CHARS ? ev.title.substring(0, EVENT_CHARS).trim() + "…" : ev.title;
+            float nw = barDim.measureText(name), size = 27 * k;
+            c.drawText(name, right - nw, base, barDim);
+            calendarIcon(c, right - nw - 12 * k - size / 2, cy, size, symbolInk);
+            right -= nw + 12 * k + size;
+        }
+        right -= 22 * k;
         glanceRect.set(right + 6 * k, cy - BAR_H / 2 * k + 4 * k, glanceRight, cy + BAR_H / 2 * k - 4 * k);
         barText.setColor(textWas);
         barDim.setColor(dimWas);
