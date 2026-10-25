@@ -41,12 +41,12 @@ import java.util.concurrent.Executors;
  * Without photos (no TMDB key, or before the first fetch): the big clock over the night aurora.
  */
 final class DreamView extends View implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener {
-    private static final long SHOW_MS = 30_000, FADE_MS = 3_000, FIRST_MS = 1_600;
-    private static final float ZOOM = 0.1f;
+    private static final long SHOW_MS = 12_000, FADE_MS = 2_400, FIRST_MS = 1_600;
+    private static final float ZOOM = 0.05f;
     /** Photos 10% larger than the screen (the zoom goes up to 1.1 without upscaling). */
     private static final int PW = 2112, PH = 1188;
-    private static final float MARGIN = 80, RIGHT = 1840, TITLE_W = 900, META_BASE = 1008;
-    private static final float DATE_BASE = 92, CLOCK_TOP = 120, CLOCK_SIZE = 200, QUOTES_GAP = 52;
+    private static final float MARGIN = 96, RIGHT = 1824, TITLE_W = 900, META_BASE = 986;
+    private static final float DATE_BASE = 92, CLOCK_TOP = 120, CLOCK_SIZE = 120, QUOTES_GAP = 52;
     private static final double DRIFT_PERIOD_S = 600;
     // The high and low and the stale prices line, made again only when they change (drawn on every frame).
     private String range = "", staleLine = "", staleFor = "";
@@ -152,8 +152,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         scene.applyPalette();
         content.setUseCompositingLayer(true, null);
         try {
-            glassShader = new RuntimeShader(Shaders.GLASS_TEXT);
-            glassPaint.setShader(glassShader);
+            glassShader = null;   // Galeria: a plain clock, bottom left
         } catch (RuntimeException | LinkageError e) {   // Android 8 to 12: no AGSL
             AppLog.w("glass clock unavailable: " + e.getMessage());
             glassShader = null;
@@ -239,15 +238,17 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         stalePaint = Ui.text(Ui.regular, 20 * k, 0x59FFFFFF);
         stalePaint.setTextAlign(Paint.Align.CENTER);
         // With photos: the corner (date, clock, prices) and the caption.
-        cornerDate = Ui.numbers(Ui.semibold, 30 * k, 0xEBFFFFFF);
+        cornerDate = Ui.numbers(Ui.medium, 26 * k, 0xB8FFFFFF);
         cornerQuote = Ui.numbers(Ui.regular, 23 * k, 0xC7FFFFFF);
         cornerStale = Ui.text(Ui.medium, 21 * k, 0x99FFFFFF);
-        cornerClock = Ui.numbers(Ui.displaySemibold, CLOCK_SIZE * k, 0xF2FFFFFF);
+        cornerClock = Ui.numbers(Ui.displaySemibold, CLOCK_SIZE * k, 0xFFFFFFFF);
+        cornerClock.setLetterSpacing(-0.045f);
         labelPaint = Ui.text(Ui.medium, 25 * k, 0xB8FFFFFF);
         labelPaint.setLetterSpacing(0.1f);
-        titlePaint = new TextPaint(Ui.text(Ui.displayMedium, 76 * k, 0xFFFFFFFF));
-        titlePaint.setLetterSpacing(0.005f);
-        metaPaint = Ui.text(Ui.medium, 29 * k, 0xC7FFFFFF);
+        titlePaint = new TextPaint(Ui.text(Ui.semibold, 24 * k, 0xE6FFFFFF));
+        titlePaint.setTextAlign(Paint.Align.RIGHT);
+        metaPaint = Ui.text(Ui.regular, 20 * k, 0x8CFFFFFF);
+        metaPaint.setTextAlign(Paint.Align.RIGHT);
         metaPaint.setLetterSpacing(0.014f);
         Symbols.warmWeather(getContext(), 30 * k);   // the corner's
         Symbols.warmWeather(getContext(), 32 * k);   // under the clock
@@ -471,31 +472,11 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         int w = photo.getWidth(), h = photo.getHeight();
         Canvas c = new Canvas(photo);
         Paint p = new Paint(Paint.DITHER_FLAG);
-        float caption = withCaption ? scrimStrength(lightCaption, 0.5f) : 0, corner = scrimStrength(lightClock, 0.42f);
-        p.setShader(new LinearGradient(0, h, 0, h * 0.42f,
-                new int[] {black(0.55f * caption), black(0.33f * caption), black(0.11f * caption), 0},
-                new float[] {0, 0.35f, 0.7f, 1}, Shader.TileMode.CLAMP));
-        c.drawRect(0, h * 0.42f, w, h, p);
-        RadialGradient around = new RadialGradient(0, h, w * 0.7f,
-                new int[] {black(caption), black(0.55f * caption), black(0.15f * caption), 0},
-                new float[] {0, 0.4f, 0.72f, 1}, Shader.TileMode.CLAMP);
-        Matrix m = new Matrix();
-        m.setScale(1, 0.62f, 0, h);
-        around.setLocalMatrix(m);
-        p.setShader(around);
-        c.drawRect(0, h - w * 0.7f * 0.62f, w * 0.7f, h, p);
-        p.setShader(new LinearGradient(0, 0, 0, h * 0.3f, new int[] {black(0.3f), black(0.075f), 0},
-                new float[] {0, 0.45f, 1}, Shader.TileMode.CLAMP));
-        c.drawRect(0, 0, w, h * 0.3f, p);
-        float cx = w * 0.86f, cy = h * 0.15f;
-        RadialGradient clockSide = new RadialGradient(cx, cy, w * 0.36f,
-                new int[] {black(corner), black(0.6f * corner), black(0.15f * corner), 0},
-                new float[] {0, 0.42f, 0.75f, 1}, Shader.TileMode.CLAMP);
-        Matrix mc = new Matrix();
-        mc.setScale(1, 0.72f, cx, cy);
-        clockSide.setLocalMatrix(mc);
-        p.setShader(clockSide);
-        c.drawRect(w * 0.5f, 0, w, cy + w * 0.36f * 0.72f, p);
+        // Galeria: a light veil at the top and a deeper one under the clock and the credit.
+        float dark = Math.min(1, 0.72f + Math.max(lightCaption, lightClock) * 0.25f);
+        p.setShader(new LinearGradient(0, 0, 0, h, new int[] {black(0.25f), 0, 0, black(dark)},
+                new float[] {0, 0.22f, 0.58f, 1}, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, p);
         return photo;
     }
 
@@ -509,57 +490,18 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
     // MARK: - Corner: date and weather, glass clock, prices
 
+    /** Galeria: the clock bottom left, the date and the temperature under it. */
     private void recordChrome() {
         Canvas c = chrome.beginRecording(w, h);
         try {
-            float right = RIGHT * k;
-            float x = right;
+            float x = MARGIN * k;
+            float lineBase = h - 88 * k - cornerDate.descent() * 0.4f;
+            float clockBase = lineBase - Ui.cap(cornerDate) - 16 * k - 6 * k;
+            c.drawText(clock, x - Ui.leftBearing(cornerClock, clock), clockBase, cornerClock);
+            String line = date;
             HomeData.Weather wx = data.weather;
-            if (!Double.isNaN(wx.temp) && Prefs.weather()) {
-                String temp = HomeData.degrees(wx.temp);
-                float tw = cornerDate.measureText(temp);
-                c.drawText(temp, x - tw, DATE_BASE * k, cornerDate);
-                x -= tw + 10 * k;
-                String symbol = Symbols.weather(wx.code, wx.isDay);
-                float size = 30 * k, sw = Symbols.width(getContext(), symbol, size);
-                Symbols.draw(getContext(), c, symbol, x - sw / 2, DATE_BASE * k - Ui.halfCap(cornerDate), size, 0xEBFFFFFF);
-                x -= sw + 26 * k;
-            }
-            c.drawText(date, x - cornerDate.measureText(date), DATE_BASE * k, cornerDate);
-
-            Glass g = glass;
-            if (g != null && glassShader != null) {
-                // The shadow under the glass: sets the digits apart from a bright photo.
-                shadowPaint.setAlpha(140);
-                c.drawBitmap(g.shadow, g.x, g.y + 6 * k, shadowPaint);
-            } else {
-                Rect ink = new Rect();
-                cornerClock.getTextBounds(clock, 0, clock.length(), ink);
-                c.drawText(clock, right - ink.right, CLOCK_TOP * k - ink.top, cornerClock);
-            }
-
-            // Compact prices under the clock, right-aligned.
-            float base = (CLOCK_TOP + Ui.cap(cornerClock) / k + QUOTES_GAP) * k;
-            float cap = Ui.cap(cornerQuote), gap = 7 * k, spacing = 26 * k;
-            int[] coins = HomeData.active();
-            int n = HomeData.coinCount();
-            String[] values = new String[n];
-            float[] glyphs = new float[n];
-            float total = spacing * (n - 1);
-            for (int i = 0; i < n; i++) {
-                values[i] = HomeData.compact(data.prices[coins[i]]);
-                glyphs[i] = Glyphs.width(getContext(), HomeData.COINS[coins[i]], cap);
-                total += glyphs[i] + gap + cornerQuote.measureText(values[i]);
-            }
-            float qx = right - total;
-            for (int i = 0; i < n; i++) {
-                Glyphs.coin(getContext(), c, HomeData.COINS[coins[i]], qx + glyphs[i] / 2, base - cap / 2, cap, 0xA6FFFFFF);
-                qx += glyphs[i] + gap;
-                c.drawText(values[i], qx, base, cornerQuote);
-                qx += cornerQuote.measureText(values[i]) + spacing;
-            }
-            String stale = HomeData.staleness(data.pricesAt, 5 * 60_000L);
-            if (!stale.isEmpty() && n > 0) c.drawText(stale, right - total - 24 * k - cornerStale.measureText(stale), base, cornerStale);
+            if (!Double.isNaN(wx.temp) && Prefs.weather()) line += "  ·  " + HomeData.degrees(wx.temp);
+            c.drawText(line, x, lineBase, cornerDate);
         } finally {
             chrome.endRecording();
         }
@@ -683,23 +625,17 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
 
     // MARK: - Photo caption (bottom left)
 
+    /** Galeria: the credit bottom right, small (the title, then genre · service). */
     private void recordCaption(Slide s) {
         Canvas c = s.caption.beginRecording(w, h);
         try {
             if (s.pick.photo != null) return;   // your photos have no caption
-            float x = MARGIN * k, metaBase = META_BASE * k, titleBase = metaBase - 58 * k;
+            float x = RIGHT * k, metaBase = h - 94 * k - metaPaint.descent() * 0.4f;
             String title = s.pick.title == null ? "" : s.pick.title;
-            StaticLayout t = StaticLayout.Builder.obtain(title, 0, title.length(), titlePaint, Math.round(TITLE_W * k))
-                    .setMaxLines(2).setEllipsize(TextUtils.TruncateAt.END).setAlignment(Layout.Alignment.ALIGN_NORMAL)
-                    .setIncludePad(false).build();
-            float originY = titleBase - t.getLineBaseline(t.getLineCount() - 1);
-            float capTop = originY + t.getLineBaseline(0) - Ui.cap(titlePaint);
-            c.drawText(Recs.periodLabel(), x, capTop - 30 * k, labelPaint);
-            c.save();
-            c.translate(x - Ui.leftBearing(titlePaint, title), originY);
-            t.draw(c);
-            c.restore();
-            if (s.pick.meta != null && !s.pick.meta.isEmpty()) c.drawText(s.pick.meta, x, metaBase, metaPaint);
+            title = TextUtils.ellipsize(title, titlePaint, TITLE_W * k, TextUtils.TruncateAt.END).toString();
+            boolean meta = s.pick.meta != null && !s.pick.meta.isEmpty();
+            if (meta) c.drawText(s.pick.meta, x, metaBase, metaPaint);
+            c.drawText(title, x, meta ? metaBase - Ui.cap(metaPaint) - 14 * k : metaBase, titlePaint);
         } finally {
             s.caption.endRecording();
         }
