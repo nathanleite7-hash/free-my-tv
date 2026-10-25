@@ -3639,6 +3639,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private final Recs.Pick surprise = new Recs.Pick();
     private List<Recs.Pick> surprisePool = new ArrayList<>(), surpriseWheel = new ArrayList<>();
+    private Rows.Card lastShown;
     private Recs.Pick surpriseLanded;
     private long surpriseAt;
     private int surpriseFrom;
@@ -3724,10 +3725,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         java.util.Collections.shuffle(wheel);
         if (wheel.size() > SPIN_STEPS + 1) wheel = new ArrayList<>(wheel.subList(0, SPIN_STEPS + 1));
         for (Recs.Pick p : wheel) rowsData.card(p);
+        // It lands on a title whose image is ready (most of the pool's aren't loaded until they're needed), and the
+        // next spin will have more of them.
+        Recs.Pick land = wheel.get(SPIN_STEPS % wheel.size());
+        List<Recs.Pick> ready = new ArrayList<>();
+        for (Recs.Pick p : surprisePool) if (rowsData.cardIfReady(p) != null && !p.title.equals(surprise.title)) ready.add(p);
+        if (rowsData.cardIfReady(land) == null && !ready.isEmpty()) land = ready.get((int) (Math.random() * ready.size()));
+        wheel.set(SPIN_STEPS % wheel.size(), land);
         surpriseWheel = wheel;
         surpriseFrom = 0;
         surpriseAt = SystemClock.uptimeMillis();
-        surpriseLanded = wheel.get(SPIN_STEPS % wheel.size());
+        surpriseLanded = land;
         surprise.title = Ui.tr("Surprise me");
         surprise.meta = Ui.tr("Shuffling…");
         handler.removeCallbacks(surpriseReset);
@@ -3751,7 +3759,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             int step = (int) (SPIN_STEPS * (1 - Math.pow(1 - u, 3)));
             Recs.Pick p = !spinning() ? surpriseLanded
                     : surpriseWheel.isEmpty() ? null : surpriseWheel.get(step % surpriseWheel.size());
-            shown = p == null ? null : rowsData.card(p);
+            shown = p == null ? null : spinning() ? rowsData.cardIfReady(p) : rowsData.card(p);   // landed: load it if needed
+            if (shown == null && spinning()) shown = lastShown;   // not loaded yet: the previous cover stays a beat longer
+            if (shown != null) lastShown = shown;
         }
         if (shown != null) {
             drawCover(c, shown.bitmap, shown.shader, cell, r, 1);

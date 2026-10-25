@@ -584,6 +584,14 @@ final class Rows {
         return p == null || p.backdrop == null ? null : image(p.backdrop, false);
     }
 
+    /** The card's image only if it's already in memory (nothing is loaded). */
+    Card cardIfReady(Recs.Pick p) {
+        if (p == null || p.backdrop == null) return null;
+        synchronized (cards) {
+            return cards.get(p.backdrop);
+        }
+    }
+
     /** The Top 10's portrait card: the title's poster (TMDB's w342, kept at 180×270). */
     Card poster(Recs.Pick p) {
         return p == null || p.poster == null ? null : image(p.poster, true);
