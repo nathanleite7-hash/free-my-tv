@@ -18,14 +18,16 @@ import android.graphics.Shader;
  *  - the Liquid Glass version (480×270, lightly blurred): the photo shows through the shelf and the cards;
  *  - with forLight: the cards (the photo without scrims, cropped wide and tall, already at the focused card size) and
  *    the frosted and glass versions blended with white (by day) and with near-black (at night).
- * Only what is needed gets built (with forLight, no full photo: the cards are lightweight, so all 9 for the three tabs
- * fit in memory, ready); the other fields stay null.
+ * Only what is needed gets built (with forLight, the full photo only at 720p and in GPU memory: all 9 for the three
+ * tabs fit, ready); the other fields stay null.
  * The final image lives only in GPU memory (HARDWARE): drawing it costs one texture, and the process doesn't hold 8 MB.
  */
 final class Backdrop {
     /** The UI's size against 1920×1080 (at most 1): nothing is built bigger than the screen can show. */
     private static final float UI_SCALE = uiScale();
     static final int W = ui(1920), H = ui(1080), FW = 192, FH = 108, GW = 480, GH = 270;
+    /** The light design's hero photo (sharp, behind everything). */
+    static final int HERO_W = ui(1280), HERO_H = ui(720);
     /** The cards at their focused size (1.05×): the wide one and the two tall ones. */
     static final int WIDE_W = ui(1092), WIDE_H = ui(464), TALL_W = ui(336), TALL_H = ui(464);
 
@@ -107,8 +109,11 @@ final class Backdrop {
                 out.recycle();
                 return new Backdrop(null, frost, null, wide, tall, light, lightGlass, night, nightGlass, lightBg, nightBg, GW, GH);
             }
-            out.recycle();
-            return new Backdrop(null, frost, null, wide, tall, light, lightGlass, night, nightGlass);
+            // The full-bleed hero: the photo sharp, at 720p (scaled up on screen) and only in GPU memory, so all 9 picks
+            // of the three tabs still fit.
+            Bitmap hero = Ui.downscale(out, HERO_W, HERO_H);
+            if (hero != out) out.recycle();
+            return new Backdrop(gpu(hero), frost, null, wide, tall, light, lightGlass, night, nightGlass);
         }
 
         float boost = Math.max(0, Math.min(0.3f, (luminance(out, 0, 0.22f, 0.5f, 0.62f) - 0.22f) * 1.1f));
