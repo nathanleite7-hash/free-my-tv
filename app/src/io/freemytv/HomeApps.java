@@ -321,6 +321,20 @@ final class HomeApps {
         return items;
     }
 
+    /**
+     * The TV's own picture and sound panels, first in the drawer: picture mode, backlight (brightness), eye care, sound
+     * mode. TCL opens them as a side panel over the home screen; other TVs, their own display and sound settings.
+     */
+    static List<Item> quickSettings(Context c) {
+        List<Item> items = new ArrayList<>();
+        // By their actions: TCL's panels close themselves when opened by name.
+        device(c, items, "picture", Ui.tr("Picture"), "sunny",
+                new Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS).setPackage("com.android.tv.settings"));
+        device(c, items, "sound", Ui.tr("Sound"), "speaker",
+                new Intent("com.android.tv.action.VIEW_SOUND_SETTINGS").setPackage("com.android.tv.settings"));
+        return items;
+    }
+
     private static void device(Context c, List<Item> items, String key, String label, String symbol, Intent intent) {
         if (c.getPackageManager().resolveActivity(intent, 0) == null) return;
         Item it = shortcut(DEVICE, key, label, symbol);

@@ -19,9 +19,11 @@ import java.nio.ByteOrder;
 final class Click {
     private static final int RATE = 48_000;
     /** Bump when the sounds change (the cached WAVs are rendered again). */
-    private static final int VERSION = 2;
+    private static final int VERSION = 3;
     /** Web Audio's levels (0.05 for a move) scaled up to use the WAV's range; the play volume brings them back. */
     private static final float GAIN = 10f;
+    /** The notes swell in over 30 ms (the prototype's 12 ms read as a tap). */
+    private static final double ATTACK = 0.03;
     private SoundPool pool;
     private int move, open, back;
 
@@ -31,10 +33,11 @@ final class Click {
                     .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()).build();
             // {start Hz, end Hz, seconds, peak, delay}
-            move = pool.load(wav(c, "move", new float[][] {{392, 384, 0.13f, 0.05f, 0}, {784, 776, 0.09f, 0.008f, 0}}), 1);
-            open = pool.load(wav(c, "open", new float[][] {{523.25f, 523.25f, 0.26f, 0.055f, 0},
-                    {783.99f, 783.99f, 0.3f, 0.035f, 0.035f}, {261.63f, 261.63f, 0.22f, 0.02f, 0}}), 1);
-            back = pool.load(wav(c, "back", new float[][] {{349.23f, 329.63f, 0.16f, 0.045f, 0}, {698.46f, 659.25f, 0.1f, 0.008f, 0}}), 1);
+            // Softer than the prototype's (asked for): no bright upper partials, a slower attack, a darker filter.
+            move = pool.load(wav(c, "move", new float[][] {{392, 388, 0.16f, 0.04f, 0}}), 1);
+            open = pool.load(wav(c, "open", new float[][] {{523.25f, 523.25f, 0.3f, 0.04f, 0},
+                    {783.99f, 783.99f, 0.32f, 0.022f, 0.04f}, {261.63f, 261.63f, 0.26f, 0.02f, 0}}), 1);
+            back = pool.load(wav(c, "back", new float[][] {{349.23f, 329.63f, 0.18f, 0.036f, 0}}), 1);
         } catch (IOException | RuntimeException e) {
             AppLog.w("click sound unavailable: " + e.getMessage());
             release();
@@ -46,7 +49,7 @@ final class Click {
     void back() { play(back); }
 
     private void play(int id) {
-        if (pool != null && Prefs.sounds()) pool.play(id, 0.6f, 0.6f, 1, 0, 1f);
+        if (pool != null && Prefs.sounds()) pool.play(id, 0.38f, 0.38f, 1, 0, 1f);
     }
 
     void release() {
@@ -68,13 +71,13 @@ final class Click {
             for (int i = from; i < to; i++) {
                 double t = (double) (i - from) / RATE, u = Math.min(1, t / dur);
                 phase += 2 * Math.PI * f0 * Math.pow(f1 / f0, u) / RATE;
-                double g = t < 0.012 ? 0.0001 * Math.pow(peak / 0.0001, t / 0.012)
-                        : t < dur ? peak * Math.pow(0.0001 / peak, (t - 0.012) / (dur - 0.012)) : 0;
+                double g = t < ATTACK ? 0.0001 * Math.pow(peak / 0.0001, t / ATTACK)
+                        : t < dur ? peak * Math.pow(0.0001 / peak, (t - ATTACK) / (dur - ATTACK)) : 0;
                 dry[i] += Math.sin(phase) * g;
             }
         }
-        // Low-pass at 2400 Hz, Q 0.4 (the RBJ biquad Web Audio uses).
-        double w0 = 2 * Math.PI * 2400 / RATE, alpha = Math.sin(w0) / (2 * 0.4), cos = Math.cos(w0), a0 = 1 + alpha;
+        // Low-pass at 1500 Hz, Q 0.4 (the RBJ biquad Web Audio uses; the prototype's was at 2400).
+        double w0 = 2 * Math.PI * 1500 / RATE, alpha = Math.sin(w0) / (2 * 0.4), cos = Math.cos(w0), a0 = 1 + alpha;
         double b0 = (1 - cos) / 2 / a0, b1 = (1 - cos) / a0, b2 = b0, a1 = -2 * cos / a0, a2 = (1 - alpha) / a0;
         double[] lp = new double[count];
         double x1 = 0, x2 = 0, y1 = 0, y2 = 0;

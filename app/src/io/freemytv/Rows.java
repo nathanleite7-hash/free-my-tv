@@ -365,6 +365,27 @@ final class Rows {
     private static final String[] STYLES = {"House", "Lo-fi", "R&B", "Pop", "Dance", "Chill"};
     private static final int[] PER_HOUR = {3, 3, 3, 3, 1, 1};
 
+    /** The hero's "Listen now": this hour's first playlist, its cover as the background (Recs builds it). */
+    Recs.Pick listenNow() {
+        for (Row r : rows()) {
+            if (!r.square || r.items.isEmpty()) continue;
+            Recs.Pick p = r.items.get((int) (System.currentTimeMillis() / 3600_000L % r.items.size()));
+            Recs.Pick h = new Recs.Pick();
+            h.id = p.id;
+            h.kind = "playlist";
+            h.title = p.title;
+            h.backdrop = p.poster;
+            h.app = p.app;
+            h.pkg = p.pkg;
+            h.link = p.link;
+            h.detailed = true;
+            h.meta = Ui.trf("{style} · Playlist", "style", p.meta);
+            h.overview = Ui.trf("A {style} playlist for right now, on Spotify.", "style", p.meta.toLowerCase(Ui.locale()));
+            return h;
+        }
+        return null;
+    }
+
     /** This hour's playlists from the whole set: each style starts somewhere else every hour, the styles taking turns. */
     private static List<Recs.Pick> playlistsNow(List<Recs.Pick> all) {
         long hour = System.currentTimeMillis() / 3600_000L;

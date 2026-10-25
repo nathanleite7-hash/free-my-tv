@@ -103,6 +103,7 @@ final class Recs {
     static final Map<String, String> SERVICE_NAMES = SERVICE_NAME;
     static {
         SERVICE_NAME.put("netflix", "Netflix");
+        SERVICE_NAME.put("spotify", "Spotify");
         SERVICE_NAME.put("prime", "Prime Video");
         SERVICE_NAME.put("disney", "Disney+");
         SERVICE_NAME.put("hulu", "Hulu");
@@ -285,7 +286,7 @@ final class Recs {
     }
 
     private File imageFile(Pick p) {
-        return new File(new File(context.getCacheDir(), "recs"), p.backdrop.replace("/", ""));
+        return new File(new File(context.getCacheDir(), "recs"), p.backdrop.replaceAll("[^A-Za-z0-9._-]", ""));
     }
 
     /** With a key: fetches the list if stale or the time of day (morning/afternoon/night) changed; then the details. */
@@ -810,7 +811,7 @@ final class Recs {
         //noinspection ResultOfMethodCallIgnored
         f.getParentFile().mkdirs();
         File part = new File(f.getPath() + ".part");
-        HttpURLConnection c = (HttpURLConnection) new URL(IMAGES + p.backdrop).openConnection();
+        HttpURLConnection c = (HttpURLConnection) new URL(p.backdrop.startsWith("https://") ? p.backdrop : IMAGES + p.backdrop).openConnection();
         c.setConnectTimeout(8000);
         c.setReadTimeout(20000);
         try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(part)) {
@@ -846,6 +847,7 @@ final class Recs {
             if (b == null) throw new IOException("unreadable image");
             AppLog.w("backdrop \u201c" + p.title + "\u201d: " + bounds.outWidth + "×" + bounds.outHeight + " → " + Backdrop.W + "×" + Backdrop.H);
             boolean forLight = light;
+            if ("playlist".equals(p.kind)) b = playlistScene(b);
             Backdrop backdrop = Backdrop.make(b, forLight);
             if (forLight != light) return;   // the design changed midway: this one is stale
             synchronized (images) {
@@ -927,6 +929,36 @@ final class Recs {
             p.animation = o.optBoolean("animation");
             out.add(p);
         }
+        return out;
+    }
+
+    /**
+     * A playlist's hero: its square cover is too small to fill the screen, so the background is the cover blurred and
+     * darkened, with the cover itself, sharp, on the right (like Apple Music's).
+     */
+    private static Bitmap playlistScene(Bitmap cover) {
+        int w = Backdrop.W, h = Backdrop.H;
+        Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        android.graphics.Canvas c = new android.graphics.Canvas(out);
+        android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG | android.graphics.Paint.ANTI_ALIAS_FLAG);
+        Bitmap tiny = Bitmap.createScaledBitmap(cover, 24, 24, true);   // a blur for free: 24 px stretched to the screen
+        c.drawBitmap(tiny, null, new android.graphics.RectF(-w * 0.1f, -h * 0.4f, w * 1.1f, h * 1.4f), p);
+        tiny.recycle();
+        c.drawColor(0x8C000000);
+        float size = h * 0.52f, cx = w * 0.74f, cy = h * 0.42f;
+        android.graphics.RectF r = new android.graphics.RectF(cx - size / 2, cy - size / 2, cx + size / 2, cy + size / 2);
+        android.graphics.Paint shade = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        shade.setColor(0x99000000);
+        shade.setMaskFilter(new android.graphics.BlurMaskFilter(h * 0.04f, android.graphics.BlurMaskFilter.Blur.NORMAL));
+        c.drawRoundRect(r.left, r.top + h * 0.03f, r.right, r.bottom + h * 0.03f, h * 0.02f, h * 0.02f, shade);
+        android.graphics.BitmapShader s = new android.graphics.BitmapShader(cover, android.graphics.Shader.TileMode.CLAMP, android.graphics.Shader.TileMode.CLAMP);
+        android.graphics.Matrix m = new android.graphics.Matrix();
+        m.setScale(size / cover.getWidth(), size / cover.getHeight());
+        m.postTranslate(r.left, r.top);
+        s.setLocalMatrix(m);
+        p.setShader(s);
+        c.drawRoundRect(r, h * 0.02f, h * 0.02f, p);
+        cover.recycle();
         return out;
     }
 

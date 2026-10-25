@@ -1738,7 +1738,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // MARK: - Bottom drawer
 
     private static List<HomeApps.Item> drawerList(Context c) {
-        List<HomeApps.Item> list = HomeApps.allInputs(c);
+        List<HomeApps.Item> list = HomeApps.quickSettings(c);   // picture and sound first: the TV's most used settings
+        list.addAll(HomeApps.allInputs(c));
         list.addAll(HomeApps.drawerShortcuts(c));
         return list;
     }
@@ -3406,6 +3407,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** The three cards of the current tab (Explore, Movies, Shows) and the background taken from the first one. */
     private void updateCards() {
         List<Recs.Pick> list = recs.now(TAB_KIND[tab]);
+        Recs.Pick listen = tab == 0 ? rowsData.listenNow() : null;
+        if (listen != null && list.size() > 1) {   // "For you": the hour's playlist second, among the titles
+            list = new ArrayList<>(list);
+            list.add(1, listen);
+        }
         boolean picksChanged = !samePicks(list, cards);
         if (picksChanged) {
             cards = list;
@@ -3436,6 +3442,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             square.add(false);
             chips.add(true);
         }
+        // Spotify's playlists right under the apps.
+        for (Rows.Row row : rowsData.rows()) {
+            if (!row.square || items.size() >= MAX_ROWS) continue;
+            items.add(row.items);
+            titles.add(row.title);
+            subtitles.add("");
+            ranked.add(false);
+            square.add(true);
+            chips.add(false);
+        }
         List<Recs.Pick> recent = Recent.list(getContext());
         if (!recent.isEmpty()) {
             chips.add(true);
@@ -3447,6 +3463,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         for (Rows.Row row : rowsData.rows()) {
             if (items.size() >= MAX_ROWS) break;
+            if (row.square) continue;   // already under the apps
             List<Recs.Pick> l = row.ranked ? new ArrayList<>(row.items) : notIn(row.items, cards);   // ranks stay whole
             if (l.size() > MAX_ITEMS) l = new ArrayList<>(l.subList(0, MAX_ITEMS));
             if (l.isEmpty()) continue;
@@ -3903,7 +3920,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
             after = tmp.right + 14 * k;
         }
-        c.drawText(p.fresh ? Ui.tr("New release") : Ui.tr("Trending"), after, cy + Ui.halfCap(hEyebrow), hEyebrow);
+        c.drawText("playlist".equals(p.kind) ? Ui.tr("Listen now") : p.fresh ? Ui.tr("New release") : Ui.tr("Trending"),
+                after, cy + Ui.halfCap(hEyebrow), hEyebrow);
         fitPaint.set(hTitle);
         if (p.title != null) c.drawText(TextUtils.ellipsize(p.title, fitPaint, H_TITLE_FIT * k, TextUtils.TruncateAt.END).toString(),
                 x - Ui.leftBearing(hTitle, p.title), H_TITLE_BASE * k, hTitle);
@@ -3928,7 +3946,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             fill.setShader(null);
             fill.setColor(blend(0xE6FFFFFF, 0xFFFFFFFF, f));
             c.drawRoundRect(cell, rad, rad, fill);
-            String label = Ui.trf("Watch on {app}", "app", Recs.serviceName(p));
+            String label = heroLabel(p);
             float tw = hButton.measureText(label), tri = 20 * k, gap = 14 * k;
             float left = r.centerX() - (tri + gap + tw) / 2, mid = r.centerY();
             c.save();
@@ -3958,6 +3976,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private String heroMeta = "";
 
+    /** "Watch on Netflix", or "Listen on Spotify" for a playlist. */
+    private static String heroLabel(Recs.Pick p) {
+        return Ui.trf("playlist".equals(p.kind) ? "Listen on {app}" : "Watch on {app}", "app", Recs.serviceName(p));
+    }
+
     private HomeApps.Item shelfItem(String pkg) {
         if (pkg == null) return null;
         for (HomeApps.Item it : shelf) if (pkg.equals(it.pkg)) return it;
@@ -3972,7 +3995,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // The button names the service: the subtitle doesn't again.
         heroMeta = p == null || p.meta == null ? "" : p.meta;
         if (!service.isEmpty() && heroMeta.endsWith(" · " + service)) heroMeta = heroMeta.substring(0, heroMeta.length() - service.length() - 3);
-        float bw = hButton.measureText(Ui.trf("Watch on {app}", "app", service)) + (20 + 14 + 2 * 38) * k;
+        float bw = hButton.measureText(p == null ? "" : heroLabel(p)) + (20 + 14 + 2 * 38) * k;
         float left = MARGIN * k, top = H_BUTTON_TOP * k;
         for (RectF r : cardRects) {
             r.set(left, top, left + bw, top + H_BUTTON_H * k);
