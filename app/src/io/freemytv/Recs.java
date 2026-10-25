@@ -52,6 +52,9 @@ final class Recs {
         boolean recentApp;      // Recent: an app opened from the shelf, not a title
         String baseMeta;        // Recent: the meta without "2 h ago"
         int rank;               // Rows: its place in a Top 10 (0: none)
+        boolean fresh;          // released in the past year (the hero says "New release")
+        String genre;           // its first genre (the hero mixes them)
+        boolean animation;      // TMDB's Animation genre (the hero shows one at most)
         String poster;          // Rows: TMDB's poster (the Top 10's portrait cards)
     }
 
@@ -64,7 +67,7 @@ final class Recs {
     private static final int ANIMATION = 16;
     private static final long LIST_EVERY = 6 * 3600_000L;
     /** Bump when what is saved for each title changes (the saved list is discarded and fetched again). */
-    private static final int CACHE_VERSION = 5;
+    private static final int CACHE_VERSION = 6;
     private static final int MANHA = 0, TARDE = 1, NOITE = 2;
     /** Service name on TMDB (part of the name, lowercase) → TV app (HomeApps key, package). */
     private static final String[][] SERVICES = {
@@ -207,7 +210,10 @@ final class Recs {
         return now(null);
     }
 
-    /** This hour's 3, movies only ("movie") or shows only ("tv"); null = both (the home screen tabs). */
+    /** How many titles the hero shows (left/right go through them). */
+    static final int HERO = 10;
+
+    /** The hero's titles, movies only ("movie") or shows only ("tv"); null = both (the home screen tabs). */
     List<Pick> now(String kind) {
         List<Pick> list = new ArrayList<>();
         if (!hasKey(context)) return list;    // no TMDB key: no recommendations
@@ -217,17 +223,27 @@ final class Recs {
                     && (!p.detailed || (p.pkg != null && have.computeIfAbsent(p.pkg, this::installed)))) list.add(p);   // app missing: skip
         }
         if (list.isEmpty()) return list;
-        // Netflix first: with three or more of its titles, the hero shows only those.
-        List<Pick> netflix = new ArrayList<>();
-        for (Pick p : list) if ("netflix".equals(p.app)) netflix.add(p);
-        if (netflix.size() >= 3) list = netflix;
-        long hour = System.currentTimeMillis() / 3600_000L;
-        // Three per hour, never two from the same franchise ("Law & Order" and "Law & Order: Special…").
+        // New releases first, Netflix's before the others'; up to ten, mixing genres (at most two of one, one
+        // animation), never two from the same franchise ("Law & Order" and "Law & Order: Special…").
+        List<Pick> ordered = new ArrayList<>();
+        for (int pass = 0; pass < 4; pass++) {
+            for (Pick p : list) {
+                boolean nf = "netflix".equals(p.app);
+                if ((pass == 0 && p.fresh && nf) || (pass == 1 && p.fresh && !nf) || (pass == 2 && !p.fresh && nf)
+                        || (pass == 3 && !p.fresh && !nf)) ordered.add(p);
+            }
+        }
         List<Pick> out = new ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
-        for (int i = 0; i < list.size() && out.size() < 3; i++) {
-            Pick p = list.get((int) ((hour * 3 + i) % list.size()));
-            if (seen.add(franchise(p.title))) out.add(p);
+        Map<String, Integer> genres = new HashMap<>();
+        for (Pick p : ordered) {
+            if (out.size() >= HERO) break;
+            int g = p.genre == null ? 0 : genres.getOrDefault(p.genre, 0);
+            if (p.animation && genres.getOrDefault("\u0000animation", 0) >= 1) continue;
+            if (g >= 2 || !seen.add(franchise(p.title))) continue;
+            if (p.animation) genres.put("\u0000animation", 1);
+            if (p.genre != null) genres.put(p.genre, g + 1);
+            out.add(p);
         }
         return out;
     }
@@ -451,16 +467,18 @@ final class Recs {
         //    past 3 months.
         JSONArray movies = get("/discover/movie?vote_count.gte=30&primary_release_date.gte=" + day(-365)
                 + "&primary_release_date.lte=" + day(0) + common).getJSONArray("results");
-        JSONArray shows = get("/discover/tv?vote_count.gte=20&air_date.gte=" + day(-90) + "&air_date.lte=" + day(0)
+        JSONArray shows = get("/discover/tv?vote_count.gte=20&first_air_date.gte=" + day(-365) + "&first_air_date.lte=" + day(0)
                 + common).getJSONArray("results");
         List<Pick> newMovies = new ArrayList<>(), newShows = new ArrayList<>();
         for (int i = 0; i < movies.length(); i++) add(newMovies, movies.getJSONObject(i), "movie");
         for (int i = 0; i < shows.length(); i++) add(newShows, shows.getJSONObject(i), "tv");
-        // Trending first, then the new releases; movies and shows alternating, without repeats, up to 24.
+        for (Pick n : newMovies) n.fresh = true;
+        for (Pick n : newShows) n.fresh = true;
+        // The new releases first, then what's trending; movies and shows alternating, without repeats, up to 40.
         List<Pick> list = new ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
-        alternate(list, seen, hotMovies, hotShows, 24);
-        alternate(list, seen, newMovies, newShows, 24);
+        alternate(list, seen, newMovies, newShows, 40);
+        alternate(list, seen, hotMovies, hotShows, 40);
         if (list.isEmpty()) throw new IOException("TMDB returned no recommendations");
         picks = list;
         period = p;
@@ -523,7 +541,9 @@ final class Recs {
         if (p.kind.equals("tv")) parts.add(Ui.tr("Series"));
         if (genres != null && genres.length() > 0) {
             String name = genres.getJSONObject(0).optString("name");
-            parts.add(genre(name));
+            p.genre = genre(name);
+            parts.add(p.genre);
+            for (int g = 0; g < genres.length(); g++) p.animation |= genres.getJSONObject(g).optInt("id") == ANIMATION;
         }
         if (p.kind.equals("movie")) {
             int minutes = o.optInt("runtime");
@@ -860,15 +880,13 @@ final class Recs {
             for (Pick p : picks) {
                 a.put(new JSONObject().put("id", p.id).put("kind", p.kind).put("title", p.title).put("backdrop", p.backdrop).put("link", p.link == null ? "" : p.link)
                         .put("meta", p.meta).put("overview", p.overview).put("app", p.app == null ? "" : p.app).put("pkg", p.pkg == null ? "" : p.pkg)
-                        .put("detailed", p.detailed));
+                        .put("detailed", p.detailed).put("fresh", p.fresh).put("genre", p.genre == null ? "" : p.genre)
+                        .put("animation", p.animation));
             }
             SharedPreferences.Editor e = cache.edit().putString("picks", a.toString()).putInt("period", period).putLong("listAt", listAt)
                     .putString("language", listLanguage)
                     .putLong("keyStamp", keyStamp).putInt("version", CACHE_VERSION);
-            // Watchmode links of titles no longer in the list go (the refused-key mark stays).
-            Set<String> keep = new HashSet<>();
-            for (Pick p : picks) keep.add(linkKey(p));
-            for (String k : cache.getAll().keySet()) if (k.startsWith("wm:") && !k.equals("wm:refused") && !keep.contains(k)) e.remove(k);
+            // Watchmode links stay (the rows' titles too: each costs 2 of the free plan's requests to look up again).
             e.apply();
         } catch (Exception ignored) {
         }
@@ -890,6 +908,9 @@ final class Recs {
             p.app = o.optString("app").isEmpty() ? null : o.optString("app");
             p.pkg = o.optString("pkg").isEmpty() ? null : o.optString("pkg");
             p.detailed = o.optBoolean("detailed");
+            p.fresh = o.optBoolean("fresh");
+            p.genre = o.optString("genre").isEmpty() ? null : o.optString("genre");
+            p.animation = o.optBoolean("animation");
             out.add(p);
         }
         return out;

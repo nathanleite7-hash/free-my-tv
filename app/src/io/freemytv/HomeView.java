@@ -203,8 +203,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // The three tabs, then the round buttons at the top right (up to HomeApps.MAX_TOP).
     private final Spring[] topFocus = new Spring[3 + HomeApps.MAX_TOP];
     private final RectF[] topRects = new RectF[3 + HomeApps.MAX_TOP];
-    private final Spring[] cardFocus = new Spring[3];
-    private final RectF[] cardRects = new RectF[3];
+    private final Spring[] cardFocus = new Spring[Recs.HERO];
+    private final RectF[] cardRects = new RectF[Recs.HERO];
     private final List<HomeApps.Item> lightButtons = new ArrayList<>();
     private Paint lTitle, lTab, lTabOn, lCardTitle, lCardMeta, lQuote, lTip, lDate, lClock, lWeather, lClockQuote;
     private Shader lightGradient, heroScrimLeft, heroScrimBottom, heroScrimTop;
@@ -486,7 +486,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             topFocus[i] = new Spring(0.26f, 0.85f, 0);
             topRects[i] = new RectF();
         }
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < Recs.HERO; i++) {
             cardFocus[i] = new Spring(0.32f, 0.78f, 0);
             cardRects[i] = new RectF();
         }
@@ -3174,7 +3174,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 retarget(false);
             }
         }
-        for (Recs.Pick p : recs.wanted()) recs.backdrop(p);   // all three tabs preloaded: switching tabs is instant
+        // The hero's photo and its neighbours, built ahead (all ten of each tab wouldn't fit in memory).
+        for (int d = -1; d <= 2 && !cards.isEmpty(); d++) recs.backdrop(cards.get(((cardIndex + d) % cards.size() + cards.size()) % cards.size()));
         // Picks bring their own background; without them (no TMDB key), your photo if there is one.
         boolean own = !picksOn() && Photos.on(getContext());
         Backdrop b = own ? Photos.backdrop(getContext(), ownReady) : cards.isEmpty() ? null
@@ -3641,13 +3642,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
             after = tmp.right + 14 * k;
         }
-        c.drawText(Ui.tr("Trending"), after, cy + Ui.halfCap(hEyebrow), hEyebrow);
+        c.drawText(p.fresh ? Ui.tr("New release") : Ui.tr("Trending"), after, cy + Ui.halfCap(hEyebrow), hEyebrow);
         fitPaint.set(hTitle);
         if (p.title != null) c.drawText(TextUtils.ellipsize(p.title, fitPaint, H_TITLE_FIT * k, TextUtils.TruncateAt.END).toString(),
                 x - Ui.leftBearing(hTitle, p.title), H_TITLE_BASE * k, hTitle);
-        if (p.meta != null && !p.meta.isEmpty()) {
+        if (!heroMeta.isEmpty()) {
             fitPaint.set(hMeta);
-            c.drawText(TextUtils.ellipsize(p.meta, fitPaint, H_TITLE_FIT * k, TextUtils.TruncateAt.END).toString(), x, H_META_BASE * k, hMeta);
+            c.drawText(TextUtils.ellipsize(heroMeta, fitPaint, H_TITLE_FIT * k, TextUtils.TruncateAt.END).toString(), x, H_META_BASE * k, hMeta);
         }
         if (heroDesc != null) {
             c.save();
@@ -3694,6 +3695,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
     }
 
+    private String heroMeta = "";
+
     private HomeApps.Item shelfItem(String pkg) {
         if (pkg == null) return null;
         for (HomeApps.Item it : shelf) if (pkg.equals(it.pkg)) return it;
@@ -3705,6 +3708,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (hButton == null) return;
         Recs.Pick p = cards.isEmpty() ? null : cards.get(Math.min(cardIndex, cards.size() - 1));
         String service = p == null || p.pkg == null ? "" : Recs.serviceName(p);
+        // The button names the service: the subtitle doesn't again.
+        heroMeta = p == null || p.meta == null ? "" : p.meta;
+        if (!service.isEmpty() && heroMeta.endsWith(" · " + service)) heroMeta = heroMeta.substring(0, heroMeta.length() - service.length() - 3);
         float bw = hButton.measureText(Ui.trf("Watch on {app}", "app", service)) + (20 + 14 + 2 * 38) * k;
         float left = MARGIN * k, top = H_BUTTON_TOP * k;
         for (RectF r : cardRects) {
