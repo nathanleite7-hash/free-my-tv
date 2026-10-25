@@ -4323,7 +4323,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** "Watch on Netflix", or "Listen on Spotify" for a playlist. */
     private static String heroLabel(Recs.Pick p) {
         if ("nowplaying".equals(p.kind)) return Ui.tr("Open the player");
-        return Ui.trf("playlist".equals(p.kind) ? "Listen on {app}" : "Watch on {app}", "app", Recs.serviceName(p));
+        return "playlist".equals(p.kind) ? Ui.trf("Listen on {app}", "app", Recs.serviceName(p))
+                : Ui.trf("Watch on {app}", "app", Recs.serviceName(p));
     }
 
     private HomeApps.Item shelfItem(String pkg) {
