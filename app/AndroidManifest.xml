@@ -4,6 +4,8 @@
     android:versionCode="3"
     android:versionName="1.2">
 
+    <!-- Settings > Screensaver > Start after: the TV's own timeout (allowed once over ADB: appops WRITE_SETTINGS). -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- After the TV boots (and after a TV update), checks that Free My TV mode is still as you left it. -->
