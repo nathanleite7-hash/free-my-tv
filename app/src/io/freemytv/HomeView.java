@@ -107,7 +107,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static final float BAR_Y = 48, BAR_H = 72, BAR_PAD = 6, TAB_PAD = 30, ROUND = 64, BAR_SCRIM_H = 230;
     // Rows under the apps (trending movies, trending shows): cards in the picks' own 2.35:1, drawn on a layer below the
     // screen that scrolls up with the focus; the background turns into the photo's dark frosted version as it does.
-    private static final float ROWS_LAYER_TOP = 1100, ROWS_LAYER_H = 1280, ROW0_TITLE = 1150, ROW0_TOP = 1174, ROW_STEP = 440;
+    private static final float ROWS_LAYER_TOP = 1100, ROWS_LAYER_H = 1420, ROW0_TITLE = 1150, ROW0_TOP = 1174, ROW_STEP = 440;
     private static final float ROW_CARD_W = 432, ROW_CARD_H = 243, ROW_GAP = 32, ROW_SCROLL_PAD = 330, AMBIENT_AT = 400;
     /** The quotes' row, under the round buttons (the tabs moved up beside them). */
     private static final float L_QUOTES_ROW = 192;
@@ -870,6 +870,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float lift = -d * shift, page = lift - scrollY.value * k;
         show(heroLayer, top * (1 - smoothstep(60, 360, scrollY.value)), page);
         show(status, top, lift);
+        if (scrimNode != null) {
+            scrimNode.setAlpha(Ui.clamp(scrollY.value / 200f) * top);
+            scrimNode.setTranslationY(lift);
+        }
         show(platter, home, page);
         show(tiles, home, page);
         show(rowsLayer, home, page);
@@ -3640,6 +3644,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final android.graphics.Path barClip = new android.graphics.Path();
     private final Paint glassRim = new Paint(Paint.ANTI_ALIAS_FLAG);
     private float barBlurK = -1;
+    private final android.graphics.RenderNode scrimNode = realBlur ? new android.graphics.RenderNode("barScrim") : null;
+    private int scrimFor = -1;
 
     /** The glass of a bar control: over the real blur, a light veil and a hairline; elsewhere, the liquid glass. */
     private void barGlass(Canvas c, RectF r, float rad, float alpha) {
@@ -3677,17 +3683,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float ty = status.getTranslationY();
         // The scrim goes under the blur here: the capsule shows the content's color, blurred,
         // and the text beside it still reads.
-        float scrim = Ui.clamp(scrollY.value / 200f) * status.getAlpha();
-        if (scrim > 0.004f) {
+        // Its own node: its alpha follows the scroll on every frame (updateLayers) without redrawing this view, whose
+        // drawing would otherwise keep the scrim of the last frame it recorded (a black band left over the hero).
+        if (scrimFor != w) {
+            scrimFor = w;
+            scrimNode.setPosition(0, 0, w, Math.round(BAR_SCRIM_H * k));
+            Canvas sc = scrimNode.beginRecording();
             fill.setShader(barScrim);
-            fill.setAlpha(Math.round(255 * scrim));
-            canvas.save();
-            canvas.translate(0, ty);
-            canvas.drawRect(0, 0, w, BAR_SCRIM_H * k, fill);
-            canvas.restore();
+            sc.drawRect(0, 0, w, BAR_SCRIM_H * k, fill);
             fill.setShader(null);
-            fill.setAlpha(255);
+            scrimNode.endRecording();
         }
+        canvas.drawRenderNode(scrimNode);
         barClip.reset();
         barClip.addRoundRect(barRect, barRect.height() / 2, barRect.height() / 2, android.graphics.Path.Direction.CW);
         for (int i = 0; i < lightButtons.size(); i++) {
