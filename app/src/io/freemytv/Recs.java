@@ -49,6 +49,7 @@ final class Recs {
         String link;            // opens the title in its app (looked up with Watchmode), or null: the app's home
         boolean detailed;
         java.io.File photo;     // one of your own photos (Photos): no title, no caption
+        boolean recentApp;      // Recent: an app opened from the shelf, not a title
     }
 
     interface Listener { void onRecs(); }
