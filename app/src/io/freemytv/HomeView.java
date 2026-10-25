@@ -666,7 +666,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /**
      * Once an evening, after sunset: a reminder that the TV's Eye Care (in Picture) makes the screen easier on tired
-     * eyes, and the drawer's Picture shortcut says it for the rest of the night.
+     * eyes (TCL calls it Eye Care; here it's Night Shift).
      */
     private void eyeCare() {
         if (!running || !picksOn()) return;
@@ -677,7 +677,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         int day = cal.get(java.util.Calendar.YEAR) * 10000 + (cal.get(java.util.Calendar.MONTH) + 1) * 100 + cal.get(java.util.Calendar.DAY_OF_MONTH);
         if (cal.get(java.util.Calendar.HOUR_OF_DAY) < 5 || Prefs.eyeCareDay() == day) return;   // after midnight: the evening's already been
         Prefs.setEyeCareDay(day);
-        showToast(Ui.tr("It's dark out: Eye Care in Picture (the drawer) is easier on the eyes."));
+        showToast(Ui.tr("It's dark out: Night Shift, in Picture (the drawer), is easier on the eyes."));
     }
 
     /** The track changed, or it was paused or played: the hero's first slide follows (only when something changed). */
@@ -2089,8 +2089,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         pItem.setTextSize(23 * k * s);
         fitPaint.set(pItem);
         float room = cell.right - 18 * k - (ix + sw + 16 * k * s);
-        String name = "picture".equals(it.key) && night() ? Ui.tr("Eye Care") : it.label;   // at night, what it's for
-        String label = TextUtils.ellipsize(name, fitPaint, room, TextUtils.TruncateAt.END).toString();
+        String label = TextUtils.ellipsize(it.label, fitPaint, room, TextUtils.TruncateAt.END).toString();
         c.drawText(label, ix + sw + 16 * k * s, cy + Ui.halfCap(pItem), pItem);
         pItem.setTextSize(23 * k);
     }
@@ -3639,12 +3638,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // MARK: - To watch together, and Surprise me
 
     private final Recs.Pick surprise = new Recs.Pick();
-    private List<Recs.Pick> surprisePool = new ArrayList<>();
+    private List<Recs.Pick> surprisePool = new ArrayList<>(), surpriseWheel = new ArrayList<>();
     private Recs.Pick surpriseLanded;
     private long surpriseAt;
     private int surpriseFrom;
     private String togetherWhy = "";
-    private static final long SPIN_MS = 1700;
+    private static final long SPIN_MS = 1700, LANDED_MS = 45_000;
     private static final int SPIN_STEPS = 22;
 
     /**
@@ -3652,7 +3651,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * that you haven't opened. With nothing watched yet, the rows' titles as they come. "Surprise me" leads it.
      */
     private List<Recs.Pick> together(List<Recs.Pick> recent) {
-        List<Recs.Pick> all = new ArrayList<>();
+        List<Recs.Pick> all = new ArrayList<>(rowsData.pool());   // a few hundred titles, beyond what the rows show
         // Not the Top 10s: they're Netflix's lists as they are (cartoons too), the rest of the rows are filtered.
         for (Rows.Row row : rowsData.rows()) if (!row.square && !row.ranked) all.addAll(row.items);
         if (all.size() < 6) return new ArrayList<>();
@@ -3690,6 +3689,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         if (out.size() < 4) return new ArrayList<>();
         if (surpriseLanded == null && !spinning()) surprisePool = new ArrayList<>(out);   // a spin keeps its own
+        java.util.Collections.shuffle(out, new java.util.Random(System.currentTimeMillis() / 3600_000L));   // the row: a new mix every hour
         togetherWhy = genres.isEmpty() ? "" : Ui.trf("because you watch {genres}", "genres", String.join(Ui.tr(" and "), genres));
         if (out.size() > MAX_ITEMS - 1) out = new ArrayList<>(out.subList(0, MAX_ITEMS - 1));
         surprise.kind = "surprise";
@@ -3701,22 +3701,37 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         return out;
     }
 
+    /** 45 s after it lands, "Surprise me" is itself again, ready for another spin. */
+    private final Runnable surpriseReset = () -> {
+        surpriseLanded = null;
+        surpriseAt = 0;
+        surprise.title = Ui.tr("Surprise me");
+        surprise.meta = Ui.tr("A title for the two of you");
+        rowsDirty = true;
+        HomeView.this.rowsLayer.invalidate();
+    };
+
     private boolean spinning() {
         return surpriseAt != 0 && SystemClock.uptimeMillis() - surpriseAt < SPIN_MS;
     }
 
     /** OK on "Surprise me": the covers shuffle, slowing down like a wheel, and land on one. OK again opens it. */
     private void spin() {
-        List<Recs.Pick> ready = new ArrayList<>();
-        for (Recs.Pick p : surprisePool) if (rowsData.card(p) != null) ready.add(p);
-        if (ready.size() < 3) ready = surprisePool;
-        if (ready.isEmpty()) return;
-        surprisePool = ready;
-        surpriseFrom = (int) (Math.random() * ready.size());
+        if (surprisePool.isEmpty()) return;
+        // The wheel: SPIN_STEPS covers from a random place in the whole pool; the last one is where it lands. Their
+        // images are asked for now (they come in during the spin; one not ready yet shows the gradient for a moment).
+        List<Recs.Pick> wheel = new ArrayList<>(surprisePool);
+        java.util.Collections.shuffle(wheel);
+        if (wheel.size() > SPIN_STEPS + 1) wheel = new ArrayList<>(wheel.subList(0, SPIN_STEPS + 1));
+        for (Recs.Pick p : wheel) rowsData.card(p);
+        surpriseWheel = wheel;
+        surpriseFrom = 0;
         surpriseAt = SystemClock.uptimeMillis();
-        surpriseLanded = ready.get((surpriseFrom + SPIN_STEPS) % ready.size());
+        surpriseLanded = wheel.get(SPIN_STEPS % wheel.size());
         surprise.title = Ui.tr("Surprise me");
         surprise.meta = Ui.tr("Shuffling…");
+        handler.removeCallbacks(surpriseReset);
+        handler.postDelayed(surpriseReset, SPIN_MS + LANDED_MS);
         handler.postDelayed(() -> {
             if (surpriseLanded == null) return;
             surprise.title = surpriseLanded.title;
@@ -3735,7 +3750,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             float u = Math.min(1, (now - surpriseAt) / (float) SPIN_MS);
             int step = (int) (SPIN_STEPS * (1 - Math.pow(1 - u, 3)));
             Recs.Pick p = !spinning() ? surpriseLanded
-                    : surprisePool.isEmpty() ? null : surprisePool.get((surpriseFrom + step) % surprisePool.size());
+                    : surpriseWheel.isEmpty() ? null : surpriseWheel.get(step % surpriseWheel.size());
             shown = p == null ? null : rowsData.card(p);
         }
         if (shown != null) {
@@ -3747,15 +3762,36 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
             return;
         }
-        float t = (now % 12000) / 12000f, a = (float) (t * 2 * Math.PI);
-        float cx = cell.centerX(), cy = cell.centerY(), dx = (float) Math.cos(a) * cell.width() * 0.5f, dy = (float) Math.sin(a) * cell.height() * 0.5f;
-        tileFill.setShader(new LinearGradient(cx - dx, cy - dy, cx + dx, cy + dy, new int[] {0xFF4B2BFF, 0xFFE0338A, 0xFFFF9F0A},
-                new float[] {0, 0.55f, 1}, Shader.TileMode.CLAMP));
+        // Premium: near-black, with three soft lights of warm and cool color drifting slowly under it (like the light
+        // in Apple's product pages), a fine highlight along the top edge, and the sparkles; no loud gradient.
+        float cx = cell.centerX(), cy = cell.centerY(), w = cell.width(), hh = cell.height();
+        float t = now / 1000f;
+        c.save();
+        c.clipRect(cell);
+        tileFill.setShader(null);
+        tileFill.setColor(0xFF0E0E12);
+        c.drawRoundRect(cell, r, r, tileFill);
+        orb(c, cx + w * 0.32f * (float) Math.sin(t / 5.3), cy + hh * 0.30f * (float) Math.cos(t / 4.1), w * 0.55f, 0x8C6E44FF);
+        orb(c, cx + w * 0.30f * (float) Math.cos(t / 6.7), cy + hh * 0.34f * (float) Math.sin(t / 5.9), w * 0.5f, 0x80FF4F8B);
+        orb(c, cx + w * 0.34f * (float) Math.sin(t / 7.9 + 2), cy + hh * 0.28f * (float) Math.cos(t / 6.3 + 1), w * 0.45f, 0x66FFB340);
+        c.restore();
+        tileFill.setShader(new LinearGradient(0, cell.top, 0, cell.top + hh * 0.5f, 0x1FFFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP));
         c.drawRoundRect(cell, r, r, tileFill);
         tileFill.setShader(null);
-        Symbols.draw(getContext(), c, "sparkles", cx, cy - 14 * k, (64 + 10 * f) * k, 0xF2FFFFFF);
+        rim.setShader(null);
+        rim.setColor(0x26FFFFFF);
+        rim.setStrokeWidth(1.5f * k);
+        c.drawRoundRect(cell.left + 0.75f * k, cell.top + 0.75f * k, cell.right - 0.75f * k, cell.bottom - 0.75f * k, r, r, rim);
+        rim.setStrokeWidth(2.5f * k);
+        Symbols.draw(getContext(), c, "sparkles", cx, cy - 16 * k, (56 + 8 * f) * k, 0xF2FFFFFF);
         String q = Ui.tr("Surprise me");
-        c.drawText(q, cx - surpriseLabel.measureText(q) / 2, cy + 60 * k, surpriseLabel);
+        c.drawText(q, cx - surpriseLabel.measureText(q) / 2, cy + 56 * k, surpriseLabel);
+    }
+
+    private void orb(Canvas c, float x, float y, float radius, int color) {
+        tileFill.setShader(new android.graphics.RadialGradient(x, y, radius, color, color & 0x00FFFFFF, Shader.TileMode.CLAMP));
+        c.drawCircle(x, y, radius, tileFill);
+        tileFill.setShader(null);
     }
 
     /** Where row r sits on the page (only rows with something in them are kept). */

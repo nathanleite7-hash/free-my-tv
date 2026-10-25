@@ -164,7 +164,10 @@ final class NowPlaying {
         positionAt = s == null ? SystemClock.elapsedRealtime() : s.getLastPositionUpdateTime();
         if (positionAt <= 0) positionAt = SystemClock.elapsedRealtime();
         speed = s == null || s.getPlaybackSpeed() <= 0 ? 1 : s.getPlaybackSpeed();
-        String key = title + "|" + artist + "|" + album;
+        // The cover can come after the text (a placeholder first): its address or its pixels are part of the key.
+        String uri = md == null ? null : md.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI);
+        Bitmap bmp = md == null ? null : md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
+        String key = title + "|" + artist + "|" + album + "|" + uri + "|" + (bmp == null ? 0 : bmp.getGenerationId() + "x" + bmp.getWidth());
         if (md != null && !key.equals(artFor)) {
             artFor = key;
             loadArt(md, key);

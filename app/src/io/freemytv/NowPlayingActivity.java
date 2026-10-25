@@ -318,7 +318,7 @@ public final class NowPlayingActivity extends Activity {
             c.restore();
             float y = 360 * k + titleLayout.getHeight() + 56 * k;
             fitText(c, active ? np.artist : Ui.tr("Play something on Spotify and it shows here."), x, y, width, artistPaint);
-            if (active && !np.album.isEmpty()) fitText(c, np.album, x, y + 46 * k, width, albumPaint);
+            if (active && !np.album.isEmpty() && !np.album.equals(np.title)) fitText(c, np.album, x, y + 46 * k, width, albumPaint);
             if (!active) {
                 drawOpenButton(c, x, 720 * k);
                 return;

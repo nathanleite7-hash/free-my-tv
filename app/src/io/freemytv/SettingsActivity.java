@@ -419,7 +419,7 @@ public class SettingsActivity extends Activity {
                 case PICKER: return Math.min(PICK_VISIBLE, pickLabels.size());
                 case SHELF_EDIT: return Math.min(PICK_VISIBLE, shelfRows.size());
                 case POWER: return powerRows().length;
-                case SAVER: return 2;
+                case SAVER: return 3;
                 default: return Prefs.KEYS.length;
             }
         }
@@ -981,12 +981,12 @@ public class SettingsActivity extends Activity {
 
         private String[] listLabels() {
             return screen == REMOTE_KEYS ? keyLabels() : screen == POWER ? powerLabels()
-                    : screen == SAVER ? new String[] {Ui.tr("Brightness"), Ui.tr("Show now")} : settingLabels();
+                    : screen == SAVER ? new String[] {Ui.tr("Brightness"), Ui.tr("Start after"), Ui.tr("Show now")} : settingLabels();
         }
 
         private String[] listValues() {
             return screen == REMOTE_KEYS ? keyValues() : screen == POWER ? powerValues()
-                    : screen == SAVER ? new String[] {Prefs.saverBright() + "%", ""} : settingValues();
+                    : screen == SAVER ? new String[] {Prefs.saverBright() + "%", saverAfterText(), ""} : settingValues();
         }
 
         private static String onOff(boolean on) {
@@ -1064,6 +1064,7 @@ public class SettingsActivity extends Activity {
             }
             if (screen == SAVER) {
                 if (focus == 0) Prefs.setSaverBright(Prefs.saverBright() + 10 * dir);
+                if (focus == 1) stepSaverAfter(dir);
                 return;
             }
             if (screen == REMOTE_KEYS) {
@@ -1475,6 +1476,33 @@ public class SettingsActivity extends Activity {
         private final android.graphics.Path previewClip = new android.graphics.Path();
         private Paint previewClock, previewSmall;
 
+        // MARK: - When the screensaver starts (the TV's own timeout: screen_off_timeout starts the screensaver on TV)
+
+        private static final int[] SAVER_AFTER = {2, 5, 10, 15, 30, 60};
+
+        private int saverAfter() {
+            return android.provider.Settings.System.getInt(getContext().getContentResolver(),
+                    android.provider.Settings.System.SCREEN_OFF_TIMEOUT, 600_000) / 60_000;
+        }
+
+        private String saverAfterText() {
+            int m = saverAfter();
+            return m >= 60 ? Ui.plural("plural|one:{n} hour|other:{n} hours", m / 60) : Ui.trf("{n} min", "n", m);
+        }
+
+        /** The next or previous choice; needs WRITE_SETTINGS (allowed once over ADB): without it, why. */
+        private void stepSaverAfter(int dir) {
+            int now = saverAfter(), at = 0;
+            for (int i = 0; i < SAVER_AFTER.length; i++) if (SAVER_AFTER[i] <= now) at = i;
+            int next = SAVER_AFTER[(at + dir + SAVER_AFTER.length) % SAVER_AFTER.length];
+            try {
+                android.provider.Settings.System.putInt(getContext().getContentResolver(),
+                        android.provider.Settings.System.SCREEN_OFF_TIMEOUT, next * 60_000);
+            } catch (SecurityException e) {
+                Toast.makeText(getContext(), Ui.tr("The TV doesn't let Free My TV change this yet."), Toast.LENGTH_LONG).show();
+            }
+        }
+
         /** An iOS switch, its right edge at `right`: green when on. */
         private void drawSwitch(Canvas c, float right, float cy, boolean isOn, float f) {
             float sw = 54 * k, sh = 32 * k;
@@ -1520,7 +1548,7 @@ public class SettingsActivity extends Activity {
                     card.setColor(blend(0xFFFFFFFF, 0xFF0A0A0C, f));
                     tmp.right = bx + bw * (Prefs.saverBright() - 20) / 80f;
                     c.drawRoundRect(tmp, 5 * k, 5 * k, card);
-                } else if (screen == SAVER) {
+                } else if (screen == SAVER && i == 2) {
                     float cw = Symbols.width(getContext(), "chevron_right", 22 * k);
                     Symbols.draw(getContext(), c, "chevron_right", rowRect.right - 30 * k - cw / 2, rowRect.centerY(), 22 * k, blend(0x99FFFFFF, 0x991C1C1E, f));
                 } else {
@@ -1608,7 +1636,8 @@ public class SettingsActivity extends Activity {
                 screen = HOME_CHOICE;
                 focus = freeActive() ? 0 : 1;
             } else if (screen == SAVER) {
-                if (focus == 1) {
+                if (focus == 1) stepSaverAfter(1);
+                if (focus == 2) {
                     pause();
                     activity.showPreview();
                 }

@@ -73,7 +73,7 @@ final class Rows {
 
     static final int PER_ROW = 20;
     private static final long EVERY = 6 * 3600_000L, TOP10_EVERY = 24 * 3600_000L;
-    private static final int CACHE_VERSION = 10, CARDS = 36, FILES = 160;
+    private static final int CACHE_VERSION = 11, CARDS = 36, FILES = 160;
     private static final int CARD_W = 480, CARD_H = 270;
     private static final String IMAGES = "https://image.tmdb.org/t/p/w780", POSTERS = "https://image.tmdb.org/t/p/w342";
     private static final int POSTER_W = 180, POSTER_H = 270, SQUARE = 320;
@@ -97,6 +97,8 @@ final class Rows {
     private final Map<String, Card> cards = new LinkedHashMap<>(16, 0.75f, true);   // least recently drawn first
     private final Set<String> loading = new HashSet<>(), failed = new HashSet<>();
     private volatile List<Row> rows = new ArrayList<>();
+    /** Surprise me's pool: a few hundred titles from the TV's services (Netflix's most), beyond what the rows show. */
+    private volatile List<Recs.Pick> pool = new ArrayList<>();
     private volatile boolean fetching;
     private volatile long fetchedAt, failedAt;
 
@@ -107,6 +109,11 @@ final class Rows {
         try {
             String saved = cache.getString("rows", null);
             if (saved != null && Ui.language.equals(cache.getString("language", ""))) rows = parse(new JSONArray(saved));
+            String savedPool = cache.getString("pool", null);
+            if (savedPool != null && Ui.language.equals(cache.getString("language", ""))) {
+                List<Row> p = parse(new JSONArray(savedPool));
+                if (!p.isEmpty()) pool = p.get(0).items;
+            }
             fetchedAt = cache.getLong("at", 0);
         } catch (Exception ignored) {
         }
@@ -114,6 +121,10 @@ final class Rows {
 
     void addListener(Listener l) { if (!listeners.contains(l)) listeners.add(l); }
     void removeListener(Listener l) { listeners.remove(l); }
+
+    List<Recs.Pick> pool() {
+        return Recs.hasKey(context) ? pool : new ArrayList<>();
+    }
 
     List<Row> rows() {
         if (!Recs.hasKey(context)) return new ArrayList<>();
@@ -139,9 +150,11 @@ final class Rows {
                 List<Row> next = fetch();
                 if (next.isEmpty()) throw new IOException("no rows");
                 rows = next;
+                List<Row> wrapped = new ArrayList<>();
+                wrapped.add(new Row("pool", "", pool, false));
                 fetchedAt = System.currentTimeMillis();
                 failedAt = 0;
-                cache.edit().putString("rows", toJson(next).toString()).putLong("at", fetchedAt)
+                cache.edit().putString("rows", toJson(next).toString()).putString("pool", toJson(wrapped).toString()).putLong("at", fetchedAt)
                         .putString("language", Ui.language).apply();
             } catch (Exception e) {
                 failedAt = System.currentTimeMillis();
@@ -187,6 +200,22 @@ final class Rows {
             netflix.add(new Row(Ui.tr("Popular movies on Netflix"), "", discover(recs, "movie", netflixId, nf, lang, movieGenres, PER_ROW, false), false));
             netflix.add(new Row(Ui.tr("Popular shows on Netflix"), "", discover(recs, "tv", netflixId, nf, lang, tvGenres, PER_ROW, false), false));
         }
+        // Surprise me's pool: 5 pages of movies and shows on Netflix, 2 on each other service (about 400 titles).
+        List<Recs.Pick> big = new ArrayList<>();
+        Set<String> inPool = new HashSet<>();
+        for (Map.Entry<Integer, String[]> e : services.entrySet()) {
+            int pages = e.getKey() == netflixId ? 5 : 2;
+            for (String kind : new String[] {"movie", "tv"}) {
+                try {
+                    for (Recs.Pick p : discover(recs, kind, e.getKey(), e.getValue(), lang, kind.equals("movie") ? movieGenres : tvGenres, 20 * pages, true, pages)) {
+                        if (inPool.add(Recs.key(p))) big.add(p);
+                    }
+                } catch (Exception ex) {
+                    AppLog.w("surprise pool: " + ex.getMessage());
+                }
+            }
+        }
+        pool = big;
         List<Recs.Pick> playlists = spotify();
         if (!playlists.isEmpty()) others.add(new Row(Ui.tr("Playlists on Spotify"), "", playlists, false, true));
         for (Map.Entry<Integer, String[]> e : services.entrySet()) {
@@ -231,12 +260,17 @@ final class Rows {
     /** Popular on one service (TMDB's discover: what it has in the TV's country, by popularity). */
     private static List<Recs.Pick> discover(Recs recs, String kind, int provider, String[] s, String lang,
                                             Map<Integer, String> genres, int max, boolean showKind) throws Exception {
+        return discover(recs, kind, provider, s, lang, genres, max, showKind, 2);
+    }
+
+    private static List<Recs.Pick> discover(Recs recs, String kind, int provider, String[] s, String lang,
+                                            Map<Integer, String> genres, int max, boolean showKind, int pages) throws Exception {
         String q = "/discover/" + kind + "?language=" + lang + "&watch_region=" + Recs.REGION
                 + "&with_watch_providers=" + provider + "&with_watch_monetization_types=flatrate&include_adult=false"
                 + "&sort_by=popularity.desc&vote_count.gte=" + (kind.equals("movie") ? 50 : 20)
                 + (Config.HIDE_ANIMATION ? "&without_genres=16" : "");
         List<Recs.Pick> out = new ArrayList<>();
-        for (int page = 1; page <= 2 && out.size() < max; page++) {
+        for (int page = 1; page <= pages && out.size() < max; page++) {
             JSONArray a = recs.tmdb(q + "&page=" + page).getJSONArray("results");
             for (int i = 0; i < a.length() && out.size() < max; i++) {
                 Recs.Pick p = pick(a.getJSONObject(i), kind, s, genres, showKind);
