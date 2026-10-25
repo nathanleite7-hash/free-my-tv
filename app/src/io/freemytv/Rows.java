@@ -73,7 +73,7 @@ final class Rows {
 
     static final int PER_ROW = 20;
     private static final long EVERY = 6 * 3600_000L, TOP10_EVERY = 24 * 3600_000L;
-    private static final int CACHE_VERSION = 9, CARDS = 36, FILES = 160;
+    private static final int CACHE_VERSION = 10, CARDS = 36, FILES = 160;
     private static final int CARD_W = 480, CARD_H = 270;
     private static final String IMAGES = "https://image.tmdb.org/t/p/w780", POSTERS = "https://image.tmdb.org/t/p/w342";
     private static final int POSTER_W = 180, POSTER_H = 270, SQUARE = 320;
@@ -116,7 +116,14 @@ final class Rows {
     void removeListener(Listener l) { listeners.remove(l); }
 
     List<Row> rows() {
-        return Recs.hasKey(context) ? rows : new ArrayList<>();
+        if (!Recs.hasKey(context)) return new ArrayList<>();
+        // The playlists' row is saved with every playlist; this hour's are picked from them.
+        List<Row> out = new ArrayList<>(rows);
+        for (int i = 0; i < out.size(); i++) {
+            Row r = out.get(i);
+            if (r.square) out.set(i, new Row(r.title, r.subtitle, playlistsNow(r.items), false, true));
+        }
+        return out;
     }
 
     void refreshIfStale() {
@@ -211,7 +218,7 @@ final class Rows {
             boolean first = seen.add(Recs.key(p));
             if (first || row.ranked) kept.add(p);   // a Top 10 keeps all ten (its numbers are the ranks)
         }
-        if (kept.size() >= 3) out.add(new Row(row.title, row.subtitle, kept, row.ranked, row.square));
+        if (kept.size() >= 3) out.add(new Row(row.title, row.subtitle, kept, row.ranked, row.square));   // a square row keeps the whole set
     }
 
     private static Map<Integer, String> genres(Recs recs, String kind, String lang) throws Exception {
@@ -339,14 +346,42 @@ final class Rows {
 
     // MARK: - Spotify (its editorial playlists: names and covers from the public oEmbed, no account)
 
-    /** {playlist, style}: house, lo-fi, R&B and pop, taking turns (what's played in this house). */
+    /** {playlist, style}: house, lo-fi, R&B, pop and chill (what's played in this house). A new selection every hour. */
     private static final String[][] PLAYLISTS = {
-        {"37i9dQZF1DX2TRYkJECvfC", "House"}, {"37i9dQZF1DWWQRwui0ExPn", "Lo-fi"}, {"37i9dQZF1DX2UgsUIg75Vg", "R&B"},
-        {"37i9dQZF1DWUa8ZRTfalHk", "Pop"}, {"37i9dQZF1DXa8NOEUWPn9W", "House"}, {"37i9dQZF1DX8Uebhn9wzrS", "Lo-fi"},
-        {"37i9dQZF1DX4SBhb3fqCJd", "R&B"}, {"37i9dQZF1DXcBWIGoYBM5M", "Pop"}, {"37i9dQZF1DX0AMssoUKCz7", "House"},
-        {"37i9dQZF1DWYmmr74INQlb", "R&B"}, {"37i9dQZF1DWTwnEm1IYyoj", "Pop"}, {"37i9dQZF1DX4dyzvuaRJ0n", "Dance"},
-        {"37i9dQZF1DX889U0CL85jj", "Chill"},
+        {"37i9dQZF1DX2TRYkJECvfC", "House"}, {"37i9dQZF1DXa8NOEUWPn9W", "House"}, {"37i9dQZF1DX0AMssoUKCz7", "House"},
+        {"37i9dQZF1DX0r3x8OtiwEM", "House"}, {"37i9dQZF1DX4dyzvuaRJ0n", "Dance"}, {"37i9dQZF1DX8tZsk68tuDw", "Dance"},
+        {"37i9dQZF1DXaXB8fQg7xif", "Dance"},
+        {"37i9dQZF1DWWQRwui0ExPn", "Lo-fi"}, {"37i9dQZF1DX8Uebhn9wzrS", "Lo-fi"}, {"37i9dQZF1DX9RwfGbeGQwP", "Lo-fi"},
+        {"37i9dQZF1DWYoYGBbGKurt", "Lo-fi"}, {"37i9dQZF1DXdLK5wjKyhVm", "Lo-fi"},
+        {"37i9dQZF1DX2UgsUIg75Vg", "R&B"}, {"37i9dQZF1DX4SBhb3fqCJd", "R&B"}, {"37i9dQZF1DWYmmr74INQlb", "R&B"},
+        {"37i9dQZF1DX6VDO8a6cQME", "R&B"}, {"37i9dQZF1DX7FY5ma9162x", "R&B"}, {"37i9dQZF1DWUzFXarNiofw", "R&B"},
+        {"37i9dQZF1DWUa8ZRTfalHk", "Pop"}, {"37i9dQZF1DXcBWIGoYBM5M", "Pop"}, {"37i9dQZF1DWTwnEm1IYyoj", "Pop"},
+        {"37i9dQZF1DXbYM3nMM0oPk", "Pop"}, {"37i9dQZF1DWVlYsZJXqdym", "Pop"}, {"37i9dQZF1DX3rxVfibe1L0", "Pop"},
+        {"37i9dQZF1DXdPec7aLTmlC", "Pop"}, {"37i9dQZF1DWWEcRhUVtL8n", "Pop"}, {"37i9dQZF1DX4fpCWaHOned", "Pop"},
+        {"37i9dQZF1DX889U0CL85jj", "Chill"}, {"37i9dQZF1DX4WYpdgoIcn6", "Chill"}, {"37i9dQZF1DWTvNyxOwkztu", "Chill"},
+        {"37i9dQZF1DXc8kgYqQLMfH", "Chill"}, {"37i9dQZF1DX1s9knjP51Oa", "Chill"},
     };
+    /** Styles in the order they take turns, and how many of each an hour shows. */
+    private static final String[] STYLES = {"House", "Lo-fi", "R&B", "Pop", "Dance", "Chill"};
+    private static final int[] PER_HOUR = {3, 3, 3, 3, 1, 1};
+
+    /** This hour's playlists from the whole set: each style starts somewhere else every hour, the styles taking turns. */
+    private static List<Recs.Pick> playlistsNow(List<Recs.Pick> all) {
+        long hour = System.currentTimeMillis() / 3600_000L;
+        List<List<Recs.Pick>> picked = new ArrayList<>();
+        for (int s = 0; s < STYLES.length; s++) {
+            List<Recs.Pick> style = new ArrayList<>();
+            for (Recs.Pick p : all) if (STYLES[s].equals(p.meta)) style.add(p);
+            List<Recs.Pick> now = new ArrayList<>();
+            for (int i = 0; i < PER_HOUR[s] && i < style.size(); i++) {
+                now.add(style.get((int) ((hour * PER_HOUR[s] + i) % style.size())));
+            }
+            picked.add(now);
+        }
+        List<Recs.Pick> out = new ArrayList<>();
+        for (int i = 0; i < 3; i++) for (List<Recs.Pick> l : picked) if (i < l.size()) out.add(l.get(i));
+        return out;
+    }
 
     private List<Recs.Pick> spotify() {
         List<Recs.Pick> out = new ArrayList<>();
