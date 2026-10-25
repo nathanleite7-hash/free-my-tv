@@ -2610,6 +2610,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             retarget(false);
             return;
         }
+        if (openedPick != null && openedPick.link == null) {
+            final Recs.Pick pick = openedPick;
+            final RectF from = new RectF(r);
+            // Watchmode: the title's own page in its app, looked up now if it wasn't before (about a second).
+            if (recs.linkThen(pick, () -> openTitle(pick, from))) return;
+        }
+        openItem(it, r, openedPick);
+    }
+
+    private void openTitle(Recs.Pick p, RectF r) {
+        if (!running) return;
+        openItem(HomeApps.app(p.pkg, Recs.serviceName(p), p.link), r, p);
+    }
+
+    private void openItem(HomeApps.Item it, RectF r, Recs.Pick openedPick) {
         boolean opened = HomeApps.open(activity, it, this, Math.round(r.left), Math.round(r.top),
                 Math.round(r.width()), Math.round(r.height()));
         if (!opened) {

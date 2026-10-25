@@ -647,6 +647,27 @@ final class Recs {
                 && cache.getString(linkKey(p), null) == null && System.currentTimeMillis() >= linkRetryAt;
     }
 
+    private final ExecutorService links = Executors.newSingleThreadExecutor();
+
+    /**
+     * On OK, for a row's title with no link yet: looks it up now (once per title, then saved) and calls `then` on the
+     * main thread, with or without a link. The rows' titles aren't looked up ahead: there are too many for the free plan.
+     * False when there is nothing to look up (no key, or already known): open it right away.
+     */
+    boolean linkThen(Pick p, Runnable then) {
+        if (!linksOn() || p == null || p.pkg == null || p.link != null || p.recentApp) return false;
+        String saved = cache.getString(linkKey(p), null);
+        if (saved != null) {
+            p.link = saved.isEmpty() ? null : saved;
+            return false;
+        }
+        links.execute(() -> {
+            findLink(p);
+            main.post(then);
+        });
+        return true;
+    }
+
     /** A key is set and Watchmode hasn't refused it (a refused key isn't tried again until it changes). */
     private boolean linksOn() {
         String key = Config.WATCHMODE_KEY.trim();
