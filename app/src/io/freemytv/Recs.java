@@ -213,6 +213,10 @@ final class Recs {
                     && (!p.detailed || (p.pkg != null && have.computeIfAbsent(p.pkg, this::installed)))) list.add(p);   // app missing: skip
         }
         if (list.isEmpty()) return list;
+        // Netflix first: with three or more of its titles, the hero shows only those.
+        List<Pick> netflix = new ArrayList<>();
+        for (Pick p : list) if ("netflix".equals(p.app)) netflix.add(p);
+        if (netflix.size() >= 3) list = netflix;
         long hour = System.currentTimeMillis() / 3600_000L;
         // Three per hour, never two from the same franchise ("Law & Order" and "Law & Order: Special…").
         List<Pick> out = new ArrayList<>();
@@ -697,6 +701,21 @@ final class Recs {
         } finally {
             c.disconnect();
         }
+    }
+
+    // MARK: - For Rows (the home screen's rows share the key, the region and the TV's services)
+
+    JSONObject tmdb(String path) throws IOException, org.json.JSONException { return get(path); }
+    static String tmdbLanguage() { return lang(); }
+    static String genreName(String name) { return genre(name); }
+    /** {TMDB name part, app key, package} of a provider the TV has, or null. */
+    String[] tvService(String name, int providerId) {
+        String[] s = service(name, providerId);
+        return s != null && installed(s[2]) ? s : null;
+    }
+    /** The pick's background if its image is already on disk (nothing is downloaded for it), or null. */
+    Backdrop backdropIfOnDisk(Pick p) {
+        return p != null && p.backdrop != null && hasImage(p) ? backdrop(p) : null;
     }
 
     private JSONObject get(String path) throws IOException, org.json.JSONException {

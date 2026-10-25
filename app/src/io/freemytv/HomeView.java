@@ -59,7 +59,7 @@ import java.util.function.Consumer;
  * Measurements are in a 1920×1080 space (k = width / 1920). The screen is split into layers so the TV's weak GPU only
  * redraws what changed.
  */
-final class HomeView extends ViewGroup implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener {
+final class HomeView extends ViewGroup implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener, Rows.Listener {
     // tvOS grid (Human Interface Guidelines): content inside the safe area, 80 px from the sides and 60 from top and
     // bottom; 40 px between items; 7 columns of 217 px (the apps). The shelf glass extends 36 px past the tiles (the
     // same padding on all four sides) and the tile corners are concentric with it (glass radius = radius + padding).
@@ -139,9 +139,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     });
     private final RectF a11yRect = new RectF();
     private final Layer sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer, rowsLayer;
-    private List<Recs.Pick> rowRecent = new ArrayList<>(), rowMovies = new ArrayList<>(), rowShows = new ArrayList<>();
-    private final Spring[][] rowFocus = new Spring[3][3];
-    private final RectF[][] rowRects = new RectF[3][3];
+    /** The rows under the apps ("Recently watched", then Rows'), only the ones with something in them. */
+    private static final int MAX_ROWS = 8, MAX_ITEMS = Rows.PER_ROW;
+    private final List<List<Recs.Pick>> rowItems = new ArrayList<>();
+    private final List<String> rowTitles = new ArrayList<>();
+    private final Spring[][] rowFocus = new Spring[MAX_ROWS][MAX_ITEMS];
+    private final RectF[][] rowRects = new RectF[MAX_ROWS][MAX_ITEMS];
+    /** Each row's horizontal scroll (1080p px): the focus moves to the third card, then the row slides under it. */
+    private final Spring[] rowShift = new Spring[MAX_ROWS];
+    private final Rows rowsData;
     private int rowIndex, rowCol;
     private boolean rowsDirty;
     /** How far the home screen has scrolled down (1920-wide px): 0 on the hero and the apps. */
@@ -417,6 +423,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             wake();
             data.refreshIfStale();
             recs.refreshIfStale();
+            rowsData.refreshIfStale();
             checkNotices();
             updatePalette();
             checkNight(true);
@@ -431,6 +438,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         activity = a;
         data = HomeData.get(a);
         recs = Recs.get(a);
+        rowsData = Rows.get(a);
         click = new Click(a);
         shelfVisible = Math.min(HomeApps.shelfVisible(a), (int) APPS_VISIBLE);
         ui = a.getSharedPreferences("home-ui", Context.MODE_PRIVATE);
@@ -465,7 +473,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (int i = 0; i < 3; i++) {
             cardFocus[i] = new Spring(0.32f, 0.78f, 0);
             cardRects[i] = new RectF();
-            for (int r = 0; r < 3; r++) {
+        }
+        for (int r = 0; r < MAX_ROWS; r++) {
+            rowShift[r] = new Spring(0.42f, 1, 0);
+            for (int i = 0; i < MAX_ITEMS; i++) {
                 rowFocus[r][i] = new Spring(0.34f, 0.78f, 0);
                 rowRects[r][i] = new RectF();
             }
@@ -503,8 +514,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lastStep = 0;
         data.addListener(this);
         recs.addListener(this);
+        rowsData.addListener(this);
         data.refreshIfStale();
         recs.refreshIfStale();
+        rowsData.refreshIfStale();
         Photos.importInbox(getContext(), ownReady);   // photos a computer just sent
         if (tvInputs != null) tvInputs.registerCallback(inputCallback, handler);
         handler.postDelayed(tick, 15_000);
@@ -539,6 +552,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         handler.removeCallbacks(reloadSoon);
         data.removeListener(this);
         recs.removeListener(this);
+        rowsData.removeListener(this);
         if (tvInputs != null) tvInputs.unregisterCallback(inputCallback);
     }
 
@@ -611,6 +625,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         updatePicks();
     }
 
+    /** New lists, or a card's image is ready. */
+    @Override public void onRows() {
+        updatePicks();
+        rowsDirty = true;
+        rowsLayer.invalidate();
+    }
+
     private void invalidateAll() {
         for (View v : new View[] {sky, heroLayer, status, platter, tiles, drawerLayer}) v.invalidate();
     }
@@ -627,7 +648,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // cheaper for the GPU to composite on every frame of the drawer animation.
         measure(platter, width, Math.round(320 * kk));
         measure(tiles, width, Math.round(320 * kk));
-        measure(rowsLayer, width, Math.round(ROWS_LAYER_H * kk));
+        measure(rowsLayer, width, height);   // the screen: the rows scroll inside it (drawRows)
         measure(drawerLayer, width, Math.round(600 * kk));
         measure(sheetLayer, width, height);
         measure(toastLayer, Math.round(1000 * kk), Math.round(220 * kk));
@@ -646,7 +667,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         place(status, 0, 0);
         place(platter, 0, Math.round(750 * kk));
         place(tiles, 0, Math.round(840 * kk));
-        place(rowsLayer, 0, Math.round(ROWS_LAYER_TOP * kk));
+        place(rowsLayer, 0, 0);
         place(drawerLayer, 0, Math.round(470 * kk));
         sheetLayer.layout(0, 0, width, height);
         sheetLayer.setPivotX(width / 2f);
@@ -791,7 +812,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean statusMoving = step(statusFocus, dt);
         boolean heroMoving = heroFocus.step(dt);
         boolean topMoving = step(topFocus, dt), cardsMoving = step(cardFocus, dt);
-        boolean rowsMoving = step(rowFocus[0], dt) | step(rowFocus[1], dt) | step(rowFocus[2], dt), scrolling = scrollY.step(dt);
+        boolean rowsMoving = false, scrolling = scrollY.step(dt);
+        for (int r = 0; r < rowItems.size() && r < MAX_ROWS; r++) rowsMoving |= step(rowFocus[r], dt) | rowShift[r].step(dt);
+        if (rowsMoving) positionRows();
         boolean tilting = tiltX.step(dt) | tiltY.step(dt);
         if (tilting) {
             if (zone == Z_SHELF) tilesMoving = true;
@@ -870,13 +893,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float lift = -d * shift, page = lift - scrollY.value * k;
         show(heroLayer, top * (1 - smoothstep(60, 360, scrollY.value)), page);
         show(status, top, lift);
-        if (scrimNode != null) {
-            scrimNode.setAlpha(Ui.clamp(scrollY.value / 200f) * top);
-            scrimNode.setTranslationY(lift);
-        }
+        if (realBlur && Math.abs(scrimNow() - scrimDrawn) > 0.002f) invalidate();
         show(platter, home, page);
         show(tiles, home, page);
-        show(rowsLayer, home, page);
+        show(rowsLayer, home, lift);
+        if (rowsPage != scrollY.value) {
+            rowsPage = scrollY.value;
+            rowsLayer.invalidate();
+        }
         float da = home * smoothstep(0.1f, 0.6f, dc);
         drawerLayer.setTranslationY((1 - d) * shift);
         drawerLayer.setAlpha(da);
@@ -2031,7 +2055,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean topChanged = aim(topFocus, !sheetOpen && zone == Z_TOP ? topIndex : -1, snap);
         heroChanged |= aim(cardFocus, !sheetOpen && zone == Z_CARDS ? cardIndex : -1, snap) | topChanged;
         boolean rowsChanged = false;
-        for (int r = 0; r < 3; r++) rowsChanged |= aim(rowFocus[r], !sheetOpen && zone == Z_ROWS && rowIndex == r ? rowCol : -1, snap);
+        for (int r = 0; r < MAX_ROWS; r++) rowsChanged |= aim(rowFocus[r], !sheetOpen && zone == Z_ROWS && rowIndex == r ? rowCol : -1, snap);
+        if (zone == Z_ROWS && rowIndex < rowItems.size()) {
+            int n = rowItems.get(rowIndex).size();
+            float pitch = ROW_CARD_W + ROW_GAP;
+            rowShift[rowIndex].target = Math.max(0, Math.min(n - 3, rowCol - 2)) * pitch;
+            if (snap) rowShift[rowIndex].snap(rowShift[rowIndex].target);
+        }
         rowsDirty |= snap || rowsChanged;
         scrollY.target = scrollTarget();
         if (snap) {
@@ -3107,15 +3137,31 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (b != null || (cards.isEmpty() && !own)) showBackdrop(b);
         layoutHeroButton();
         // The rows never repeat what the hero shows (on the Movies tab, its movies are the hero's: that row goes away).
-        List<Recs.Pick> movies = notIn(recs.now("movie"), cards), shows = notIn(recs.now("tv"), cards);
+        List<List<Recs.Pick>> items = new ArrayList<>();
+        List<String> titles = new ArrayList<>();
         List<Recs.Pick> recent = Recent.list(getContext());
-        if (recent.size() > 3) recent = new ArrayList<>(recent.subList(0, 3));
-        boolean recentChanged = !sameRecent(recent, rowRecent), hadRecent = !rowRecent.isEmpty();
-        boolean rowsChanged = recentChanged || !samePicks(movies, rowMovies) || !samePicks(shows, rowShows);
-        rowRecent = recent;
-        rowMovies = movies;
-        rowShows = shows;
-        if (hadRecent != !recent.isEmpty() && w > 0) layoutRows();   // the rows below move up or down a slot
+        if (!recent.isEmpty()) {
+            items.add(recent);
+            titles.add(Ui.tr("Recently watched"));
+        }
+        for (Rows.Row row : rowsData.rows()) {
+            if (items.size() >= MAX_ROWS) break;
+            List<Recs.Pick> l = notIn(row.items, cards);
+            if (l.size() > MAX_ITEMS) l = new ArrayList<>(l.subList(0, MAX_ITEMS));
+            if (l.isEmpty()) continue;
+            items.add(l);
+            titles.add(row.title);
+        }
+        boolean rowsChanged = !titles.equals(rowTitles) || items.size() != rowItems.size();
+        for (int i = 0; !rowsChanged && i < items.size(); i++) rowsChanged = !sameRecent(items.get(i), rowItems.get(i));
+        if (rowsChanged) {
+            rowItems.clear();
+            rowItems.addAll(items);
+            rowTitles.clear();
+            rowTitles.addAll(titles);
+            if (w > 0) layoutRows();
+        }
+        if (zone == Z_ROWS && rowIndex >= rowItems.size()) rowIndex = Math.max(0, rowItems.size() - 1);
         if (zone == Z_ROWS && rowList(rowIndex).isEmpty()) {
             zone = Z_SHELF;
             retarget(false);
@@ -3146,18 +3192,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private List<Recs.Pick> rowList(int r) {
-        return r == 0 ? rowRecent : r == 1 ? rowMovies : rowShows;
+        return r >= 0 && r < rowItems.size() ? rowItems.get(r) : java.util.Collections.<Recs.Pick>emptyList();
     }
 
-    /** Where row r sits on the page: empty rows (no recents yet) take no room. */
+    /** Where row r sits on the page (only rows with something in them are kept). */
     private int slot(int r) {
-        int n = 0;
-        for (int i = 0; i < r; i++) if (!rowList(i).isEmpty()) n++;
-        return n;
+        return r;
     }
 
     private int nextRow(int from, int dir) {
-        for (int r = from + dir; r >= 0 && r < 3; r += dir) if (!rowList(r).isEmpty()) return r;
+        for (int r = from + dir; r >= 0 && r < rowItems.size(); r += dir) if (!rowList(r).isEmpty()) return r;
         return -1;
     }
 
@@ -3173,6 +3217,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (zone == Z_SHELF) return;   // the apps keep the hero's background
         Recs.Pick rp = zone == Z_ROWS && rowCol < rowList(rowIndex).size() ? rowList(rowIndex).get(rowCol) : null;
         if (rp != null && rp.recentApp) return;
+        if (zone == Z_ROWS) {
+            Backdrop b = recs.backdropIfOnDisk(rp);   // the hero's titles; the others keep the background
+            if (b != null) showBackdrop(b);
+            return;
+        }
         Recs.Pick p = zone == Z_ROWS ? rp
                 : cards.isEmpty() ? null : cards.get(Math.min(cardIndex, cards.size() - 1));
         Backdrop b = p == null ? null : recs.backdrop(p);
@@ -3180,30 +3229,44 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void layoutRows() {
-        for (int r = 0; r < 3; r++) {
-            float top = (ROW0_TOP + slot(r) * ROW_STEP) * k;
-            for (int i = 0; i < 3; i++) {
-                float x = (MARGIN + i * (ROW_CARD_W + ROW_GAP)) * k;
+        positionRows();
+        rowsDirty = true;
+    }
+
+    /** The cards' places on the page, each row shifted by its scroll. */
+    private void positionRows() {
+        for (int r = 0; r < MAX_ROWS; r++) {
+            float top = (ROW0_TOP + slot(r) * ROW_STEP) * k, shift = rowShift[r].value;
+            for (int i = 0; i < MAX_ITEMS; i++) {
+                float x = (MARGIN + i * (ROW_CARD_W + ROW_GAP) - shift) * k;
                 rowRects[r][i].set(x, top, x + ROW_CARD_W * k, top + ROW_CARD_H * k);
-                snap(rowRects[r][i]);
+                if (rowShift[r].settled()) snap(rowRects[r][i]);
             }
         }
-        rowsDirty = true;
     }
 
     /** The rows' layer: "Trending movies" and "Trending shows", the focused card drawn last (it grows over the others). */
     private void drawRows(Canvas c) {
         if (!picksOn()) return;
-        for (int r = 0; r < 3; r++) {
+        // The layer is the screen; the page scrolls inside it. Only the rows (and cards) on screen are drawn.
+        float page = scrollY.value * k;
+        c.save();
+        c.translate(0, -page);
+        for (int r = 0; r < rowItems.size(); r++) {
             List<Recs.Pick> list = rowList(r);
-            if (list.isEmpty()) continue;
-            String title = r == 0 ? Ui.tr("Recently watched") : r == 1 ? Ui.tr("Trending movies") : Ui.tr("Trending shows");
-            c.drawText(title, MARGIN * k - Ui.leftBearing(rowTitlePaint, title), (ROW0_TITLE + slot(r) * ROW_STEP) * k, rowTitlePaint);
+            float titleY = (ROW0_TITLE + slot(r) * ROW_STEP) * k;
+            if (list.isEmpty() || titleY - 60 * k > page + h || titleY + (ROW_STEP - 40) * k < page) continue;
+            String title = rowTitles.get(r);
+            c.drawText(title, MARGIN * k - Ui.leftBearing(rowTitlePaint, title), titleY, rowTitlePaint);
             int top = -1;
             for (int i = 0; i < list.size(); i++) if (rowFocus[r][i].value > 0.02f && (top < 0 || rowFocus[r][i].value > rowFocus[r][top].value)) top = i;
-            for (int i = 0; i < list.size(); i++) if (i != top) drawRowCard(c, r, i, list.get(i));
+            for (int i = 0; i < list.size(); i++) {
+                RectF b = rowRects[r][i];
+                if (i != top && b.right > -40 * k && b.left < w + 40 * k) drawRowCard(c, r, i, list.get(i));
+            }
             if (top >= 0) drawRowCard(c, r, top, list.get(top));
         }
+        c.restore();
     }
 
     private final Map<String, Shader> recentShaders = new HashMap<>();
@@ -3224,9 +3287,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         shadowDeep.setColor(Ui.alpha(0xFF000000, 0.35f + 0.3f * f));
         shadows.draw(c, tmp, r0, DEEP_BLUR * k, shadowDeep);
         c.restore();
-        Backdrop b = recs.backdrop(p);
-        if (b != null && b.wide != null) {
-            drawCover(c, b.wide, b.wideShader, cell, r0 * s, 1);
+        Rows.Card card = p.recentApp ? null : rowsData.card(p);
+        Backdrop b = card != null || p.recentApp ? null : recs.backdropIfOnDisk(p);
+        if (card != null || b != null && b.wide != null) {
+            if (card != null) drawCover(c, card.bitmap, card.shader, cell, r0 * s, 1);
+            else drawCover(c, b.wide, b.wideShader, cell, r0 * s, 1);
             HomeApps.Item app = shelfItem(p.pkg);
             if (app != null && app.logo != null) {
                 float lh = 16 * k * s, lw = Math.min(90 * k * s, app.logo.getWidth() * lh / app.logo.getHeight());
@@ -3647,9 +3712,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final android.graphics.RenderNode barBlur = realBlur ? new android.graphics.RenderNode("barBlur") : null;
     private final android.graphics.Path barClip = new android.graphics.Path();
     private final Paint glassRim = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private float barBlurK = -1;
-    private final android.graphics.RenderNode scrimNode = realBlur ? new android.graphics.RenderNode("barScrim") : null;
-    private int scrimFor = -1;
+    private float barBlurK = -1, rowsPage = -1;
+    private float scrimDrawn = -1;
+
+    private float scrimNow() {
+        return Ui.clamp(scrollY.value / 200f) * status.getAlpha();
+    }
 
     /** The glass of a bar control: over the real blur, a light veil and a hairline; elsewhere, the liquid glass. */
     private void barGlass(Canvas c, RectF r, float rad, float alpha) {
@@ -3687,18 +3755,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float ty = status.getTranslationY();
         // The scrim goes under the blur here: the capsule shows the content's color, blurred,
         // and the text beside it still reads.
-        // Its own node: its alpha follows the scroll on every frame (updateLayers) without redrawing this view, whose
-        // drawing would otherwise keep the scrim of the last frame it recorded (a black band left over the hero).
-        if (scrimFor != w) {
-            scrimFor = w;
-            scrimNode.setPosition(0, 0, w, Math.round(BAR_SCRIM_H * k));
-            Canvas sc = scrimNode.beginRecording();
+        // updateLayers redraws this view whenever the scrim changes: otherwise its drawing keeps the scrim of the last
+        // frame it recorded (a black band left over the hero after scrolling back).
+        scrimDrawn = scrimNow();
+        if (scrimDrawn > 0.004f) {
             fill.setShader(barScrim);
-            sc.drawRect(0, 0, w, BAR_SCRIM_H * k, fill);
+            fill.setAlpha(Math.round(255 * scrimDrawn));
+            canvas.save();
+            canvas.translate(0, ty);
+            canvas.drawRect(0, 0, w, BAR_SCRIM_H * k, fill);
+            canvas.restore();
             fill.setShader(null);
-            scrimNode.endRecording();
+            fill.setAlpha(255);
         }
-        canvas.drawRenderNode(scrimNode);
         barClip.reset();
         barClip.addRoundRect(barRect, barRect.height() / 2, barRect.height() / 2, android.graphics.Path.Direction.CW);
         for (int i = 0; i < lightButtons.size(); i++) {
