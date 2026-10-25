@@ -67,9 +67,10 @@ final class Rows {
 
     static final int PER_ROW = 20;
     private static final long EVERY = 6 * 3600_000L, TOP10_EVERY = 24 * 3600_000L;
-    private static final int CACHE_VERSION = 5, CARDS = 36, FILES = 160;
+    private static final int CACHE_VERSION = 6, CARDS = 36, FILES = 160;
     private static final int CARD_W = 480, CARD_H = 270;
-    private static final String IMAGES = "https://image.tmdb.org/t/p/w780";
+    private static final String IMAGES = "https://image.tmdb.org/t/p/w780", POSTERS = "https://image.tmdb.org/t/p/w342";
+    private static final int POSTER_W = 180, POSTER_H = 270;
     private static final String TOP10 = "https://www.netflix.com/tudum/top10/data/all-weeks-countries.tsv";
 
     /** Letters outside the Latin alphabet. */
@@ -265,6 +266,8 @@ final class Rows {
             return null;   // no translation in the TV's language (a Telugu title on a Brazilian TV)
         }
         p.backdrop = backdrop;
+        String poster = o.optString("poster_path", "");
+        if (!poster.isEmpty() && !"null".equals(poster)) p.poster = poster;
         p.overview = o.optString("overview");
         p.app = s[1];
         p.pkg = s[2];
@@ -382,8 +385,16 @@ final class Rows {
 
     /** The card's image if it's ready; otherwise null, and it's loaded in the background (onRows when it is). */
     Card card(Recs.Pick p) {
-        if (p == null || p.backdrop == null) return null;
-        String key = p.backdrop;
+        return p == null || p.backdrop == null ? null : image(p.backdrop, false);
+    }
+
+    /** The Top 10's portrait card: the title's poster (TMDB's w342, kept at 180×270). */
+    Card poster(Recs.Pick p) {
+        return p == null || p.poster == null ? null : image(p.poster, true);
+    }
+
+    private Card image(String path, boolean poster) {
+        String key = (poster ? "p:" : "") + path;
         synchronized (cards) {
             Card ready = cards.get(key);
             if (ready != null || failed.contains(key) || !loading.add(key)) return ready;
@@ -391,7 +402,7 @@ final class Rows {
         images.execute(() -> {
             Card made = null;
             try {
-                made = load(key);
+                made = load(path, poster);
             } catch (Exception | OutOfMemoryError e) {
                 AppLog.w("row image: " + e.getMessage());
             }
@@ -410,14 +421,14 @@ final class Rows {
         return null;
     }
 
-    private Card load(String path) throws IOException {
+    private Card load(String path, boolean poster) throws IOException {
         File dir = new File(context.getCacheDir(), "rows");
-        File f = new File(dir, path.replace("/", ""));
+        File f = new File(dir, (poster ? "p" : "") + path.replace("/", ""));
         if (!f.exists()) {
             //noinspection ResultOfMethodCallIgnored
             dir.mkdirs();
             File part = new File(f.getPath() + ".part");
-            HttpURLConnection c = (HttpURLConnection) new URL(IMAGES + path).openConnection();
+            HttpURLConnection c = (HttpURLConnection) new URL((poster ? POSTERS : IMAGES) + path).openConnection();
             c.setConnectTimeout(8000);
             c.setReadTimeout(20000);
             try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(part)) {
@@ -437,7 +448,7 @@ final class Rows {
         o.inSampleSize = 1;
         Bitmap b = BitmapFactory.decodeFile(f.getPath(), o);
         if (b == null) throw new IOException("unreadable image");
-        int w = Math.round(CARD_W * Backdrop.W / 1920f), h = Math.round(CARD_H * Backdrop.W / 1920f);
+        int w = Math.round((poster ? POSTER_W : CARD_W) * Backdrop.W / 1920f), h = Math.round((poster ? POSTER_H : CARD_H) * Backdrop.W / 1920f);
         Bitmap small = Ui.downscale(b, w, h);
         if (small != b) b.recycle();
         return new Card(Backdrop.gpu(small));
@@ -466,7 +477,7 @@ final class Rows {
             for (Recs.Pick p : r.items) {
                 items.put(new JSONObject().put("id", p.id).put("kind", p.kind).put("title", p.title)
                         .put("backdrop", p.backdrop).put("meta", p.meta).put("overview", p.overview)
-                        .put("app", p.app).put("pkg", p.pkg).put("rank", p.rank));
+                        .put("app", p.app).put("pkg", p.pkg).put("rank", p.rank).put("poster", p.poster == null ? "" : p.poster));
             }
             a.put(new JSONObject().put("title", r.title).put("subtitle", r.subtitle).put("ranked", r.ranked).put("items", items));
         }
@@ -493,6 +504,8 @@ final class Rows {
                 p.app = o.optString("app");
                 p.pkg = o.optString("pkg");
                 p.rank = o.optInt("rank");
+                String poster = o.optString("poster");
+                if (!poster.isEmpty()) p.poster = poster;
                 p.detailed = true;
                 items.add(p);
             }

@@ -52,6 +52,7 @@ final class Recs {
         boolean recentApp;      // Recent: an app opened from the shelf, not a title
         String baseMeta;        // Recent: the meta without "2 h ago"
         int rank;               // Rows: its place in a Top 10 (0: none)
+        String poster;          // Rows: TMDB's poster (the Top 10's portrait cards)
     }
 
     interface Listener { void onRecs(); }
