@@ -97,6 +97,7 @@ final class Recs {
         {"more tv", "wink", "ru.rt.video.app.tv"},   // TMDB: "More TV" (more.tv is part of Rostelecom's Wink now)
     };
     private static final Map<String, String> SERVICE_NAME = new HashMap<>();
+    static final Map<String, String> SERVICE_NAMES = SERVICE_NAME;
     static {
         SERVICE_NAME.put("netflix", "Netflix");
         SERVICE_NAME.put("prime", "Prime Video");

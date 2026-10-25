@@ -78,7 +78,7 @@ final class Recent {
             String ago = ago(o.optLong("at"));
             String meta = o.optString("meta");
             p.baseMeta = meta;
-            p.meta = p.recentApp ? Ui.trf("Opened {ago}", "ago", ago) : meta.isEmpty() ? ago : ago + " · " + meta;
+            p.meta = ago;   // the card's chip (or the app's logo) says the rest
             out.add(p);
         }
         return out;

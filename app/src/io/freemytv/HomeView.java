@@ -140,10 +140,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final RectF a11yRect = new RectF();
     private final Layer sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer, rowsLayer;
     /** The rows under the apps ("Recently watched", then Rows'), only the ones with something in them. */
-    private static final int MAX_ROWS = 8, MAX_ITEMS = Rows.PER_ROW;
+    private static final int MAX_ROWS = 12, MAX_ITEMS = Rows.PER_ROW;
     private final List<List<Recs.Pick>> rowItems = new ArrayList<>();
     private final List<String> rowTitles = new ArrayList<>(), rowSubtitles = new ArrayList<>();
-    private final List<Boolean> rowRanked = new ArrayList<>();
+    private final List<Boolean> rowRanked = new ArrayList<>(), rowSquare = new ArrayList<>();
+    private boolean recentRow;   // row 0 is "Recently watched" (the only row whose cards carry their service's chip)
     /**
      * Top 10 rows, as on Netflix: an outlined number as tall as the card, then the title's poster overlapping its right
      * side. Each number takes the width it needs ("1" narrow, "10" wide).
@@ -616,7 +617,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** The tab names, made again only when the language changes (they are drawn on every frame). */
     private static String[] tabs() {
         if (tabsGeneration != Ui.generation) {
-            tabs = new String[] {Ui.tr("Explore"), Ui.tr("Movies"), Ui.tr("Shows")};
+            tabs = new String[] {Ui.tr("For you"), Ui.tr("Movies"), Ui.tr("Shows")};
             tabsGeneration = Ui.generation;
         }
         return tabs;
@@ -761,6 +762,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         rankPaint.setStrokeWidth(3 * k);
         rankFill = new Paint(rankPaint);
         rankFill.setStyle(Paint.Style.FILL);
+        rankOutlines.clear();
         rowSubPaint = Ui.text(Ui.medium, 22 * k, 0x8CEBEBF5);
         rowCardTitle = Ui.text(Ui.semibold, 25 * k, 0xF2FFFFFF);
         rowCardTitle.setLetterSpacing(-0.01f);
@@ -1604,8 +1606,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             tmp.set(-bw / 2, -bh / 2, bw / 2, bh / 2);
             boolean gray = picksOn() && BRAND_DEEP.containsKey(it.key);
             if (gray) {
-                // At rest, Apple TV+ gray; focused, the brand's glow comes in.
-                if (tileGray == null) tileGray = new LinearGradient(0, -bh / 2, 0, bh / 2, 0xFF3A3A3E, 0xFF2A2A2E, Shader.TileMode.CLAMP);
+                // At rest, near-black (the focused tile's own base); focused, the brand's glow comes in.
+                if (tileGray == null) tileGray = new LinearGradient(0, -bh / 2, 0, bh / 2, 0xFF141416, 0xFF0C0C0E, Shader.TileMode.CLAMP);
                 tileFill.setShader(tileGray);
                 tileFill.setAlpha(255);
                 c.drawRoundRect(tmp, r0, r0, tileFill);
@@ -1614,12 +1616,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             tileFill.setAlpha(gray ? Math.round(255 * fc) : 255);
             if (!gray || fc > 0.004f) c.drawRoundRect(tmp, r0, r0, tileFill);
             tileFill.setAlpha(255);
-            if (fc > 0.01f) {
-                tileFill.setShader(tileGlow);
-                tileFill.setAlpha(Math.round(255 * fc));
-                c.drawRoundRect(tmp, r0, r0, tileFill);
-                tileFill.setAlpha(255);
-            }
             tileFill.setShader(null);
             c.restore();
             Backdrop scene = null;   // no scene photo in the tile: most apps had none, and it hid the brand
@@ -1651,16 +1647,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             tileFill.setColor(Ui.alpha(0xFF000000, tone(0.34f, 0.48f) * shade));
             c.drawRoundRect(cell, r, r, tileFill);
         }
-        if (fc > 0.01f) {
+        if (fc > 0.01f && !picksOn()) {   // V1.6: no white rim or sheen; the lift, the shadow and the glow show the focus
             float inset = 1.25f * k;
             tmp.set(cell.left + inset, cell.top + inset, cell.right - inset, cell.bottom - inset);
             rim.setShader(null);
-            rim.setColor(Ui.alpha(0xFFFFFFFF, (picksOn() ? 0.35f : 0.85f) * fc));
+            rim.setColor(Ui.alpha(0xFFFFFFFF, 0.85f * fc));
             c.drawRoundRect(tmp, r - inset, r - inset, rim);
-            if (picksOn()) {
-                if (specTile == null) specTile = spec(bw, bh);
-                drawSpec(c, specTile, cx, cy, s, bw, bh, r0, fc);
-            }
         }
         if (tilted) c.restore();
     }
@@ -2233,7 +2225,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         border.setColor(0x14FFFFFF);
         c.drawRoundRect(cell, r, r, border);
-        if (f > 0.01f) {
+        if (f > 0.01f && !picksOn()) {
             rim.setShader(null);
             rim.setColor(Ui.alpha(0xFFFFFFFF, 0.4f * fc));
             rim.setStrokeWidth(1.5f * k);
@@ -3175,13 +3167,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // The rows never repeat what the hero shows (on the Movies tab, its movies are the hero's: that row goes away).
         List<List<Recs.Pick>> items = new ArrayList<>();
         List<String> titles = new ArrayList<>(), subtitles = new ArrayList<>();
-        List<Boolean> ranked = new ArrayList<>();
+        List<Boolean> ranked = new ArrayList<>(), square = new ArrayList<>();
         List<Recs.Pick> recent = Recent.list(getContext());
         if (!recent.isEmpty()) {
             items.add(recent);
             titles.add(Ui.tr("Recently watched"));
             subtitles.add("");
             ranked.add(false);
+            square.add(false);
         }
         for (Rows.Row row : rowsData.rows()) {
             if (items.size() >= MAX_ROWS) break;
@@ -3192,6 +3185,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             titles.add(row.title);
             subtitles.add(row.subtitle);
             ranked.add(row.ranked);
+            square.add(row.square);
         }
         boolean rowsChanged = !titles.equals(rowTitles) || !subtitles.equals(rowSubtitles) || items.size() != rowItems.size();
         for (int i = 0; !rowsChanged && i < items.size(); i++) rowsChanged = !sameRecent(items.get(i), rowItems.get(i));
@@ -3204,6 +3198,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             rowSubtitles.addAll(subtitles);
             rowRanked.clear();
             rowRanked.addAll(ranked);
+            rowSquare.clear();
+            rowSquare.addAll(square);
+            recentRow = !recent.isEmpty();
             if (w > 0) layoutRows();
         }
         if (zone == Z_ROWS && rowIndex >= rowItems.size()) rowIndex = Math.max(0, rowItems.size() - 1);
@@ -3283,6 +3280,27 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         return r < rowRanked.size() && rowRanked.get(r);
     }
 
+    private boolean square(int r) {
+        return r < rowSquare.size() && rowSquare.get(r);
+    }
+
+    private final Map<String, android.graphics.Path> rankOutlines = new HashMap<>();
+
+    /**
+     * The number's outline at the origin's baseline. The font draws some digits ("1", "4") as overlapping shapes: stroked
+     * as they are, their inner edges show, so the shapes are merged into one outline first.
+     */
+    private android.graphics.Path rankOutline(String n) {
+        android.graphics.Path p = rankOutlines.get(n);
+        if (p != null) return p;
+        android.graphics.Path glyphs = new android.graphics.Path();
+        rankFill.getTextPath(n, 0, n.length(), 0, 0, glyphs);
+        p = new android.graphics.Path();
+        p.op(glyphs, android.graphics.Path.Op.UNION);
+        rankOutlines.put(n, p);
+        return p;
+    }
+
     /** The rank's width (1080p px), measured in the number's font. */
     private float rankWidth(int r, int i) {
         List<Recs.Pick> l = rowList(r);
@@ -3294,7 +3312,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (int r = 0; r < MAX_ROWS; r++) {
             float top = (ROW0_TOP + slot(r) * ROW_STEP) * k, shift = rowShift[r].value;
             boolean rank = ranked(r);
-            float cw = rank ? RANK_CARD_W : ROW_CARD_W, ch = rank ? RANK_CARD_H : ROW_CARD_H;
+            float cw = rank ? RANK_CARD_W : square(r) ? ROW_CARD_H : ROW_CARD_W, ch = rank ? RANK_CARD_H : ROW_CARD_H;
             float dy = ROW_CARD_H - ch, start = 0;
             for (int i = 0; i < MAX_ITEMS; i++) {
                 rowX[r][i] = start;
@@ -3330,12 +3348,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     float nx = b.left + RANK_OVERLAP * k - rankPaint.measureText(n);
                     if (b.right < -40 * k || nx > w + 40 * k) continue;
                     float f = Ui.clamp(rowFocus[r][i].value);
+                    android.graphics.Path outline = rankOutline(n);
+                    c.save();
+                    c.translate(nx, b.bottom);
                     if (f > 0.01f) {   // focused: it fills in white
                         rankFill.setColor(Ui.alpha(0xFFFFFFFF, 0.92f * f));
-                        c.drawText(n, nx, b.bottom, rankFill);
+                        c.drawPath(outline, rankFill);
                     }
                     rankPaint.setColor(blend(0x59FFFFFF, 0xEBFFFFFF, f));
-                    c.drawText(n, nx, b.bottom, rankPaint);
+                    c.drawPath(outline, rankPaint);
+                    c.restore();
                 }
             }
             int top = -1;
@@ -3367,12 +3389,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         shadowDeep.setColor(Ui.alpha(0xFF000000, 0.35f + 0.3f * f));
         shadows.draw(c, tmp, r0, DEEP_BLUR * k, shadowDeep);
         c.restore();
-        Rows.Card card = p.recentApp ? null : ranked(r) && p.poster != null ? rowsData.poster(p) : rowsData.card(p);
+        Rows.Card card = p.recentApp ? null : (ranked(r) || square(r)) && p.poster != null ? rowsData.poster(p) : rowsData.card(p);
         Backdrop b = card != null || p.recentApp ? null : recs.backdropIfOnDisk(p);
         if (card != null || b != null && b.wide != null) {
             if (card != null) drawCover(c, card.bitmap, card.shader, cell, r0 * s, 1);
             else drawCover(c, b.wide, b.wideShader, cell, r0 * s, 1);
-            HomeApps.Item app = ranked(r) ? null : shelfItem(p.pkg);   // a Top 10 is one service's: no chip on its posters
+            // Only "Recently watched" mixes services: elsewhere the row's title already names it.
+            HomeApps.Item app = r == 0 && recentRow ? shelfItem(p.pkg) : null;
             if (app != null && app.logo != null) {
                 float lh = 16 * k * s, lw = Math.min(90 * k * s, app.logo.getWidth() * lh / app.logo.getHeight());
                 tmp.set(cell.left + 16 * k * s, cell.bottom - (16 + 34) * k * s, cell.left + 16 * k * s + lw + 22 * k * s, cell.bottom - 16 * k * s);
@@ -3399,7 +3422,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 g.setLocalMatrix(recentMatrix);
             }
             fill.setShader(null);
-            fill.setColor(0xFF323236);
+            fill.setColor(0xFF141416);   // like the shelf's tiles at rest
             c.drawRoundRect(cell, r0 * s, r0 * s, fill);
             if (g != null && f > 0.004f) {
                 fill.setShader(g);
@@ -3414,18 +3437,6 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 tmp.set(cell.centerX() - lw / 2, cell.centerY() - lh / 2, cell.centerX() + lw / 2, cell.centerY() + lh / 2);
                 c.drawBitmap(app.logo, null, tmp, bitmapPaint);
             }
-        }
-        if (f > 0.01f) {
-            float inset = 1.25f * k;
-            tmp.set(cell.left + inset, cell.top + inset, cell.right - inset, cell.bottom - inset);
-            rim.setShader(null);
-            rim.setColor(Ui.alpha(0xFFFFFFFF, 0.85f * f));
-            c.drawRoundRect(tmp, r0 * s - inset, r0 * s - inset, rim);
-            if (specCard == null || specCardH != bh) {
-                specCard = spec(bw, bh);
-                specCardH = bh;
-            }
-            drawSpec(c, specCard, cx, cy, s, bw, bh, r0, f);
         }
         if (tilted) c.restore();
         if (ranked(r)) return;   // the poster carries the title

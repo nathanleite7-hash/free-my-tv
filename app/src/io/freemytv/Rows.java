@@ -43,12 +43,18 @@ final class Rows {
         final String title, subtitle;   // subtitle: the small text beside the title ("Top 10" + "movies on Netflix today")
         final List<Recs.Pick> items;
         final boolean ranked;            // a Top 10: big numbers beside the cards
+        final boolean square;            // square covers (Spotify's playlists)
 
         Row(String title, String subtitle, List<Recs.Pick> items, boolean ranked) {
+            this(title, subtitle, items, ranked, false);
+        }
+
+        Row(String title, String subtitle, List<Recs.Pick> items, boolean ranked, boolean square) {
             this.title = title;
             this.subtitle = subtitle;
             this.items = items;
             this.ranked = ranked;
+            this.square = square;
         }
     }
 
@@ -67,10 +73,10 @@ final class Rows {
 
     static final int PER_ROW = 20;
     private static final long EVERY = 6 * 3600_000L, TOP10_EVERY = 24 * 3600_000L;
-    private static final int CACHE_VERSION = 6, CARDS = 36, FILES = 160;
+    private static final int CACHE_VERSION = 8, CARDS = 36, FILES = 160;
     private static final int CARD_W = 480, CARD_H = 270;
     private static final String IMAGES = "https://image.tmdb.org/t/p/w780", POSTERS = "https://image.tmdb.org/t/p/w342";
-    private static final int POSTER_W = 180, POSTER_H = 270;
+    private static final int POSTER_W = 180, POSTER_H = 270, SQUARE = 260;
     private static final String TOP10 = "https://www.netflix.com/tudum/top10/data/all-weeks-countries.tsv";
 
     /** Letters outside the Latin alphabet. */
@@ -162,33 +168,36 @@ final class Rows {
         Map<Integer, String> movieGenres = genres(recs, "movie", lang), tvGenres = genres(recs, "tv", lang);
         List<Row> out = new ArrayList<>();
         Set<String> seen = new HashSet<>();
+        // Netflix first, the other apps in between: Netflix's Top 10s, then its rows taking turns with Spotify's
+        // playlists and one row per other service.
+        List<Row> netflix = new ArrayList<>(), others = new ArrayList<>();
         if (netflixId >= 0) {
             String[] nf = services.get(netflixId);
             List<Recs.Pick>[] top = top10(recs, lang, nf, movieGenres, tvGenres);
             add(out, seen, new Row(Ui.tr("Top 10"), Ui.tr("movies on Netflix today"), top[0], true));
             add(out, seen, new Row(Ui.tr("Top 10"), Ui.tr("shows on Netflix today"), top[1], true));
-            add(out, seen, Ui.tr("Popular movies on Netflix"), discover(recs, "movie", netflixId, nf, lang, movieGenres, PER_ROW));
-            add(out, seen, Ui.tr("Popular shows on Netflix"), discover(recs, "tv", netflixId, nf, lang, tvGenres, PER_ROW));
-            add(out, seen, Ui.tr("New on Netflix"), fresh(recs, netflixId, nf, lang, movieGenres, tvGenres));
+            netflix.add(new Row(Ui.tr("New on Netflix"), "", fresh(recs, netflixId, nf, lang, movieGenres, tvGenres), false));
+            netflix.add(new Row(Ui.tr("Popular movies on Netflix"), "", discover(recs, "movie", netflixId, nf, lang, movieGenres, PER_ROW, false), false));
+            netflix.add(new Row(Ui.tr("Popular shows on Netflix"), "", discover(recs, "tv", netflixId, nf, lang, tvGenres, PER_ROW, false), false));
         }
-        // The other services: a few of each, movies and shows taking turns.
-        List<List<Recs.Pick>> others = new ArrayList<>();
+        List<Recs.Pick> playlists = spotify();
+        if (!playlists.isEmpty()) others.add(new Row(Ui.tr("Playlists on Spotify"), "", playlists, false, true));
         for (Map.Entry<Integer, String[]> e : services.entrySet()) {
             if (e.getKey() == netflixId) continue;
+            // Movies and shows taking turns: "Movie"/"Series" stays in their subtitles here.
             List<Recs.Pick> both = new ArrayList<>();
-            List<Recs.Pick> m = discover(recs, "movie", e.getKey(), e.getValue(), lang, movieGenres, 4);
-            List<Recs.Pick> t = discover(recs, "tv", e.getKey(), e.getValue(), lang, tvGenres, 4);
-            for (int i = 0; i < 4; i++) {
-                if (i < t.size()) both.add(t.get(i));
+            List<Recs.Pick> m = discover(recs, "movie", e.getKey(), e.getValue(), lang, movieGenres, 10, true);
+            List<Recs.Pick> s = discover(recs, "tv", e.getKey(), e.getValue(), lang, tvGenres, 10, true);
+            for (int i = 0; i < 10; i++) {
+                if (i < s.size()) both.add(s.get(i));
                 if (i < m.size()) both.add(m.get(i));
             }
-            others.add(both);
+            others.add(new Row(Ui.trf("Popular on {app}", "app", Recs.SERVICE_NAMES.get(e.getValue()[1])), "", both, false));
         }
-        List<Recs.Pick> mixed = new ArrayList<>();
-        for (int i = 0; i < 8 && mixed.size() < PER_ROW; i++) {
-            for (List<Recs.Pick> l : others) if (i < l.size() && mixed.size() < PER_ROW) mixed.add(l.get(i));
+        for (int i = 0; i < Math.max(netflix.size(), others.size()); i++) {
+            if (i < netflix.size()) add(out, seen, netflix.get(i));
+            if (i < others.size()) add(out, seen, others.get(i));
         }
-        add(out, seen, netflixId >= 0 ? Ui.tr("Popular on your other apps") : Ui.tr("Popular on your apps"), mixed);
         return out;
     }
 
@@ -202,7 +211,7 @@ final class Rows {
             boolean first = seen.add(Recs.key(p));
             if (first || row.ranked) kept.add(p);   // a Top 10 keeps all ten (its numbers are the ranks)
         }
-        if (kept.size() >= 3) out.add(new Row(row.title, row.subtitle, kept, row.ranked));
+        if (kept.size() >= 3) out.add(new Row(row.title, row.subtitle, kept, row.ranked, row.square));
     }
 
     private static Map<Integer, String> genres(Recs recs, String kind, String lang) throws Exception {
@@ -214,7 +223,7 @@ final class Rows {
 
     /** Popular on one service (TMDB's discover: what it has in the TV's country, by popularity). */
     private static List<Recs.Pick> discover(Recs recs, String kind, int provider, String[] s, String lang,
-                                            Map<Integer, String> genres, int max) throws Exception {
+                                            Map<Integer, String> genres, int max, boolean showKind) throws Exception {
         String q = "/discover/" + kind + "?language=" + lang + "&watch_region=" + Recs.REGION
                 + "&with_watch_providers=" + provider + "&with_watch_monetization_types=flatrate&include_adult=false"
                 + "&sort_by=popularity.desc&vote_count.gte=" + (kind.equals("movie") ? 50 : 20)
@@ -223,37 +232,40 @@ final class Rows {
         for (int page = 1; page <= 2 && out.size() < max; page++) {
             JSONArray a = recs.tmdb(q + "&page=" + page).getJSONArray("results");
             for (int i = 0; i < a.length() && out.size() < max; i++) {
-                Recs.Pick p = pick(a.getJSONObject(i), kind, s, genres, null);
+                Recs.Pick p = pick(a.getJSONObject(i), kind, s, genres, showKind);
                 if (p != null) out.add(p);
             }
         }
         return out;
     }
 
-    /** New on the service: movies from the past 3 months and shows with an episode in the past month. */
+    /** New on the service: movies from the past 4 months and shows that premiered in the past 6 (not old shows with a new episode). */
     private static List<Recs.Pick> fresh(Recs recs, int provider, String[] s, String lang, Map<Integer, String> movieGenres,
                                          Map<Integer, String> tvGenres) throws Exception {
         String common = "&language=" + lang + "&watch_region=" + Recs.REGION + "&with_watch_providers=" + provider
                 + "&with_watch_monetization_types=flatrate&include_adult=false&sort_by=popularity.desc"
                 + (Config.HIDE_ANIMATION ? "&without_genres=16" : "");
-        JSONArray m = recs.tmdb("/discover/movie?primary_release_date.gte=" + day(-90) + "&primary_release_date.lte=" + day(0) + common).getJSONArray("results");
-        JSONArray t = recs.tmdb("/discover/tv?air_date.gte=" + day(-30) + "&air_date.lte=" + day(0) + common).getJSONArray("results");
+        JSONArray m = recs.tmdb("/discover/movie?primary_release_date.gte=" + day(-120) + "&primary_release_date.lte=" + day(0) + common).getJSONArray("results");
+        JSONArray t = recs.tmdb("/discover/tv?first_air_date.gte=" + day(-180) + "&first_air_date.lte=" + day(0) + common).getJSONArray("results");
         List<Recs.Pick> out = new ArrayList<>();
         for (int i = 0; i < 10 && out.size() < PER_ROW; i++) {
             if (i < t.length()) {
-                Recs.Pick p = pick(t.getJSONObject(i), "tv", s, tvGenres, null);
+                Recs.Pick p = pick(t.getJSONObject(i), "tv", s, tvGenres, true);
                 if (p != null) out.add(p);
             }
             if (i < m.length()) {
-                Recs.Pick p = pick(m.getJSONObject(i), "movie", s, movieGenres, null);
+                Recs.Pick p = pick(m.getJSONObject(i), "movie", s, movieGenres, true);
                 if (p != null) out.add(p);
             }
         }
         return out;
     }
 
-    /** "Movie · Action · 2025 · Netflix" (or "#3 on Netflix · …" for the Top 10), from a TMDB list entry. */
-    private static Recs.Pick pick(JSONObject o, String kind, String[] s, Map<Integer, String> genres, String rank) {
+    /**
+     * A TMDB list entry. Its subtitle says only what the row doesn't: the genre and the year, and "Movie"/"Series" in
+     * rows that mix both. The service is the row's (its title says it).
+     */
+    private static Recs.Pick pick(JSONObject o, String kind, String[] s, Map<Integer, String> genres, boolean showKind) {
         String backdrop = o.optString("backdrop_path", "");
         if (backdrop.isEmpty() || "null".equals(backdrop)) return null;
         JSONArray g = o.optJSONArray("genre_ids");
@@ -273,15 +285,63 @@ final class Rows {
         p.pkg = s[2];
         p.detailed = true;
         List<String> parts = new ArrayList<>();
-        if (rank != null && !rank.isEmpty()) parts.add(rank);
-        parts.add(kind.equals("movie") ? Ui.tr("Movie") : Ui.tr("Series"));
+        if (showKind) parts.add(kind.equals("movie") ? Ui.tr("Movie") : Ui.tr("Series"));
         String genre = g != null && g.length() > 0 ? genres.get(g.optInt(0)) : null;
         if (genre != null) parts.add(genre);
         String date = o.optString(kind.equals("movie") ? "release_date" : "first_air_date", "");
-        if (date.length() >= 4 && rank == null) parts.add(date.substring(0, 4));
-        if (rank == null) parts.add(Recs.serviceName(p));
+        if (date.length() >= 4) parts.add(date.substring(0, 4));
         p.meta = String.join(" · ", parts);
         return p;
+    }
+
+    // MARK: - Spotify (its editorial playlists: names and covers from the public oEmbed, no account)
+
+    private static final String[][] PLAYLISTS = {
+        {"37i9dQZEVXbMXbN3EUUhlg"}, {"37i9dQZF1DX0FOF1IUWK1W"}, {"37i9dQZF1DXdSjVZQzv2tl"}, {"37i9dQZF1DWTkIwO2HDifB"},
+        {"37i9dQZF1DX8mBRYewE6or"}, {"37i9dQZF1DXcBWIGoYBM5M"}, {"37i9dQZEVXbMDoHDwVN2tF"}, {"37i9dQZF1DXbYM3nMM0oPk"},
+        {"37i9dQZF1DX0XUsuxWHRQd"}, {"37i9dQZF1DX4sWSpwq3LiO"},
+    };
+
+    private List<Recs.Pick> spotify() {
+        List<Recs.Pick> out = new ArrayList<>();
+        String pkg = "com.spotify.tv.android";
+        if (HomeApps.launchIntent(context.getPackageManager(), pkg) == null) return out;
+        for (String[] pl : PLAYLISTS) {
+            try {
+                HttpURLConnection c = (HttpURLConnection) new URL("https://open.spotify.com/oembed?url="
+                        + URLEncoder.encode("https://open.spotify.com/playlist/" + pl[0], "UTF-8")).openConnection();
+                c.setConnectTimeout(8000);
+                c.setReadTimeout(8000);
+                JSONObject o;
+                try (InputStream in = c.getInputStream()) {
+                    o = new JSONObject(new String(readAll(in), StandardCharsets.UTF_8));
+                } finally {
+                    c.disconnect();
+                }
+                Recs.Pick p = new Recs.Pick();
+                p.id = pl[0].hashCode();
+                p.kind = "playlist";
+                p.title = o.optString("title");
+                p.poster = o.optString("thumbnail_url");
+                p.app = "spotify";
+                p.pkg = pkg;
+                p.link = "spotify:playlist:" + pl[0];
+                p.meta = "";
+                p.detailed = true;
+                if (!p.title.isEmpty() && p.poster.startsWith("https://")) out.add(p);
+            } catch (Exception e) {
+                AppLog.w("spotify playlist " + pl[0] + ": " + e.getMessage());
+            }
+        }
+        return out;
+    }
+
+    private static byte[] readAll(InputStream in) throws IOException {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        byte[] b = new byte[8192];
+        int n;
+        while ((n = in.read(b)) > 0) out.write(b, 0, n);
+        return out.toByteArray();
     }
 
     // MARK: - Netflix's Top 10 (Tudum's weekly lists, the TV's country)
@@ -318,7 +378,7 @@ final class Rows {
                     }
                     for (int j = 0; j < found.length() && j < 3; j++) {
                         Recs.Pick p = pick(best != null ? best : found.getJSONObject(j), kind, nf,
-                                c == 0 ? movieGenres : tvGenres, "");
+                                c == 0 ? movieGenres : tvGenres, false);
                         if (p != null) {
                             p.rank = i + 1;   // Tudum's place, even when a title before it wasn't found
                             out[c].add(p);
@@ -423,12 +483,13 @@ final class Rows {
 
     private Card load(String path, boolean poster) throws IOException {
         File dir = new File(context.getCacheDir(), "rows");
-        File f = new File(dir, (poster ? "p" : "") + path.replace("/", ""));
+        File f = new File(dir, (poster ? "p" : "") + path.replaceAll("[^A-Za-z0-9._-]", ""));
         if (!f.exists()) {
             //noinspection ResultOfMethodCallIgnored
             dir.mkdirs();
             File part = new File(f.getPath() + ".part");
-            HttpURLConnection c = (HttpURLConnection) new URL((poster ? POSTERS : IMAGES) + path).openConnection();
+            String url = path.startsWith("https://") ? path : (poster ? POSTERS : IMAGES) + path;
+            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
             c.setConnectTimeout(8000);
             c.setReadTimeout(20000);
             try (InputStream in = c.getInputStream(); FileOutputStream out = new FileOutputStream(part)) {
@@ -448,7 +509,9 @@ final class Rows {
         o.inSampleSize = 1;
         Bitmap b = BitmapFactory.decodeFile(f.getPath(), o);
         if (b == null) throw new IOException("unreadable image");
-        int w = Math.round((poster ? POSTER_W : CARD_W) * Backdrop.W / 1920f), h = Math.round((poster ? POSTER_H : CARD_H) * Backdrop.W / 1920f);
+        boolean square = path.startsWith("https://");   // Spotify's covers
+        int w = Math.round((square ? SQUARE : poster ? POSTER_W : CARD_W) * Backdrop.W / 1920f);
+        int h = Math.round((square ? SQUARE : poster ? POSTER_H : CARD_H) * Backdrop.W / 1920f);
         Bitmap small = Ui.downscale(b, w, h);
         if (small != b) b.recycle();
         return new Card(Backdrop.gpu(small));
@@ -477,9 +540,9 @@ final class Rows {
             for (Recs.Pick p : r.items) {
                 items.put(new JSONObject().put("id", p.id).put("kind", p.kind).put("title", p.title)
                         .put("backdrop", p.backdrop).put("meta", p.meta).put("overview", p.overview)
-                        .put("app", p.app).put("pkg", p.pkg).put("rank", p.rank).put("poster", p.poster == null ? "" : p.poster));
+                        .put("app", p.app).put("pkg", p.pkg).put("rank", p.rank).put("poster", p.poster == null ? "" : p.poster).put("link", p.link == null ? "" : p.link));
             }
-            a.put(new JSONObject().put("title", r.title).put("subtitle", r.subtitle).put("ranked", r.ranked).put("items", items));
+            a.put(new JSONObject().put("title", r.title).put("subtitle", r.subtitle).put("ranked", r.ranked).put("square", r.square).put("items", items));
         }
         return a;
     }
@@ -504,12 +567,14 @@ final class Rows {
                 p.app = o.optString("app");
                 p.pkg = o.optString("pkg");
                 p.rank = o.optInt("rank");
+                String link = o.optString("link");
+                if (!link.isEmpty()) p.link = link;
                 String poster = o.optString("poster");
                 if (!poster.isEmpty()) p.poster = poster;
                 p.detailed = true;
                 items.add(p);
             }
-            out.add(new Row(r.optString("title"), r.optString("subtitle"), items, r.optBoolean("ranked")));
+            out.add(new Row(r.optString("title"), r.optString("subtitle"), items, r.optBoolean("ranked"), r.optBoolean("square")));
         }
         return out;
     }
