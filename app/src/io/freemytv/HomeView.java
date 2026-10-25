@@ -212,8 +212,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // The three tabs, then the round buttons at the top right (up to HomeApps.MAX_TOP).
     private final Spring[] topFocus = new Spring[3 + HomeApps.MAX_TOP];
     private final RectF[] topRects = new RectF[3 + HomeApps.MAX_TOP];
-    private final Spring[] cardFocus = new Spring[Recs.HERO];
-    private final RectF[] cardRects = new RectF[Recs.HERO];
+    private final Spring[] cardFocus = new Spring[HERO_MAX];
+    private final RectF[] cardRects = new RectF[HERO_MAX];
+    /** The hero's titles and Spotify's playlist. */
+    private static final int HERO_MAX = Recs.HERO + 1;
     private final List<HomeApps.Item> lightButtons = new ArrayList<>();
     private Paint lTitle, lTab, lTabOn, lCardTitle, lCardMeta, lQuote, lTip, lDate, lClock, lWeather, lClockQuote;
     private Shader lightGradient, heroScrimLeft, heroScrimBottom, heroScrimTop;
@@ -495,7 +497,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             topFocus[i] = new Spring(0.26f, 0.85f, 0);
             topRects[i] = new RectF();
         }
-        for (int i = 0; i < Recs.HERO; i++) {
+        for (int i = 0; i < HERO_MAX; i++) {
             cardFocus[i] = new Spring(0.32f, 0.78f, 0);
             cardRects[i] = new RectF();
         }
@@ -3412,6 +3414,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             list = new ArrayList<>(list);
             list.add(1, listen);
         }
+        if (list.size() > HERO_MAX) list = new ArrayList<>(list.subList(0, HERO_MAX));
         boolean picksChanged = !samePicks(list, cards);
         if (picksChanged) {
             cards = list;
