@@ -194,6 +194,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     // At the top: tabs (0 to 2) and icon-only buttons (3 to 5); the three cards
     private int tab, topIndex, cardIndex;
+    /** topIndex of the dollar, weather and time between the tabs and the round buttons: OK opens the drawer. */
+    private static final int GLANCE = 99;
+    private final Spring glanceFocus = new Spring(0.26f, 0.85f, 0);
+    private final RectF glanceRect = new RectF();
     private int widgetIndex;    // with TalkBack on, the drawer's weather (0) or quotes (1) card can take the focus
     private List<Recs.Pick> cards = new ArrayList<>();
     // The three tabs, then the round buttons at the top right (up to HomeApps.MAX_TOP).
@@ -604,7 +608,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void setLightButtons(List<HomeApps.Item> list) {
         lightButtons.clear();
         for (HomeApps.Item it : list) if (it.kind == HomeApps.SETTINGS) lightButtons.add(it);
-        if (zone == Z_TOP && topIndex >= 3 + lightButtons.size()) {
+        if (zone == Z_TOP && topIndex != GLANCE && topIndex >= 3 + lightButtons.size()) {
             topIndex = 2 + lightButtons.size();
             if (topIndex < 3 && !picksOn()) zone = Z_SHELF;   // without the picks the tabs can't hold focus
             else if (topIndex < 3) selectTab(topIndex);
@@ -831,7 +835,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (reorderAnim) tilesMoving |= stepReorder(dt, up);
         boolean statusMoving = step(statusFocus, dt);
         boolean heroMoving = heroFocus.step(dt);
-        boolean topMoving = step(topFocus, dt), cardsMoving = step(cardFocus, dt);
+        glanceFocus.target = !sheetOpen && zone == Z_TOP && topIndex == GLANCE ? 1 : 0;
+        boolean topMoving = step(topFocus, dt) | glanceFocus.step(dt), cardsMoving = step(cardFocus, dt);
         boolean rowsMoving = false, scrolling = scrollY.step(dt);
         for (int r = 0; r < rowItems.size() && r < MAX_ROWS; r++) rowsMoving |= step(rowFocus[r], dt) | rowShift[r].step(dt);
         if (rowsMoving) positionRows();
@@ -2582,6 +2587,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             it = drawerItems.get(drawerIndex);
             r = drawerRects[drawerIndex];
         } else if (zone == Z_TOP) {
+            if (topIndex == GLANCE) {
+                click.open();
+                openDrawer();   // the widgets: the forecast, the prices, the inputs
+                retarget(false);
+                return;
+            }
             if (topIndex < 3) {
                 selectTab(topIndex);
                 return;
@@ -2915,6 +2926,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 if (i >= others.size()) return "";
                 return label(others, i) + ", " + Ui.trf("{i} of {n}", "i", i + 1, "n", others.size());
             case Z_TOP:
+                if (i == GLANCE) return Ui.tr("Dollar, weather and time. OK opens the widgets.");
                 if (i >= 3) return label(lightButtons, i - 3);
                 return Ui.trf("{name}, tab {i} of {n}", "name", tabs()[i], "i", i + 1, "n", 3);
             case Z_CARDS: return i < cards.size() ? pickText(cards.get(i)) : "";
@@ -2948,6 +2960,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 break;
             }
             case Z_TOP:
+                if (i == GLANCE) {
+                    a11yRect.set(glanceRect);
+                    dy = status.getTranslationY();
+                    break;
+                }
                 if (i >= 3 + lightButtons.size()) return false;
                 a11yRect.set(topRects[i]);
                 dy = (i < 3 ? heroLayer : status).getTranslationY();
@@ -3930,7 +3947,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
             Symbols.draw(getContext(), c, it.symbol, cell.centerX(), cell.centerY(), 28 * k * s, blend(0xEBFFFFFF, INK, f));
         }
-        // Time, weather and the dollar, right to left.
+        // Time, weather and the dollar, right to left: one focusable group (OK opens the drawer).
+        float glanceRight = right + 22 * k;
+        float gf = Ui.clamp(glanceFocus.value);
+        if (gf > 0.01f && !glanceRect.isEmpty()) {
+            fill.setShader(null);
+            fill.setColor(Ui.alpha(0xFFFFFFFF, 0.16f * gf));
+            c.drawRoundRect(glanceRect, glanceRect.height() / 2, glanceRect.height() / 2, fill);
+        }
         float base = cy + Ui.halfCap(barText);
         float tw = barText.measureText(clockText);
         c.drawText(clockText, right - tw, base, barText);
@@ -3967,6 +3991,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             c.drawText(label, right - lw, base, barLabel);
             right -= lw + 28 * k;
         }
+        glanceRect.set(right + 6 * k, cy - BAR_H / 2 * k + 4 * k, glanceRight, cy + BAR_H / 2 * k - 4 * k);
         if (sleepText.isEmpty()) return;
         float sw2 = lQuote.measureText(sleepText), size = lQuote.getTextSize();
         c.drawText(sleepText, right - sw2, cy + Ui.halfCap(lQuote), lQuote);
@@ -4031,7 +4056,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
             case Z_TOP:
                 if (dx != 0) {
-                    int next = Math.max(picksOn() ? 0 : 3, Math.min(2 + lightButtons.size(), topIndex + dx));
+                    // Order: the tabs (0-2), the dollar/weather/time (GLANCE), the round buttons (3…).
+                    boolean glance = !glanceRect.isEmpty();
+                    int next;
+                    if (topIndex == GLANCE) next = dx > 0 ? (lightButtons.isEmpty() ? GLANCE : 3) : (picksOn() ? 2 : GLANCE);
+                    else if (topIndex == 2 && dx > 0 && glance) next = GLANCE;
+                    else if (topIndex == 3 && dx < 0 && glance) next = GLANCE;
+                    else next = Math.max(picksOn() ? 0 : 3, Math.min(2 + lightButtons.size(), topIndex + dx));
                     if (next == topIndex) return true;
                     topIndex = next;
                     if (topIndex < 3) selectTab(topIndex);   // like Apple TV tabs: focusing a tab selects it
