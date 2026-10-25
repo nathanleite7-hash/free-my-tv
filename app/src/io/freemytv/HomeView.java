@@ -149,6 +149,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** For each app with a pick this hour, that pick's photo: it shows behind the app's logo when focused. */
     private final Map<String, Backdrop> appScene = new HashMap<>();
     private final android.graphics.Matrix coverMatrix = new android.graphics.Matrix();
+    // Focus tilt (tvOS): the newly focused tile or card tips toward where the focus came from and springs back; a
+    // diagonal highlight slides with it. One pair of springs: only the focused item tilts.
+    private final android.graphics.Camera camera3d = new android.graphics.Camera();
+    private final android.graphics.Matrix tiltMatrix = new android.graphics.Matrix(), specMatrix = new android.graphics.Matrix();
+    private final Spring tiltX = new Spring(0.55f, 0.62f, 0), tiltY = new Spring(0.55f, 0.62f, 0);
+    private final Paint specPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private LinearGradient specTile, specCard;
+    private int lastDx, lastDy;
+    // The focused app's scene (Disney+'s franchise tiles): it comes in after a short pause, then a slow zoom settles.
+    private static final long SCENE_DELAY_MS = 280, SCENE_IN_MS = 450, SCENE_ZOOM_MS = 3600;
+    private int sceneIndex = -1;
+    private long sceneAt;
     private Paint rowTitlePaint, rowCardTitle, rowCardMeta;
     private int zone = Z_CARDS;
 
@@ -780,6 +792,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean heroMoving = heroFocus.step(dt);
         boolean topMoving = step(topFocus, dt), cardsMoving = step(cardFocus, dt);
         boolean rowsMoving = step(rowFocus[0], dt) | step(rowFocus[1], dt), scrolling = scrollY.step(dt);
+        boolean tilting = tiltX.step(dt) | tiltY.step(dt);
+        if (tilting) {
+            if (zone == Z_SHELF) tilesMoving = true;
+            else if (zone == Z_ROWS) rowsMoving = true;
+        }
+        if (sceneIndex >= 0 && sceneIndex < shelf.size() && motionOn() && up - sceneAt < SCENE_DELAY_MS + SCENE_ZOOM_MS + 100
+                && shelf.get(sceneIndex).pkg != null && appScene.containsKey(shelf.get(sceneIndex).pkg)) tilesMoving = true;
         if (topMoving) status.invalidate();
         heroMoving |= topMoving | cardsMoving;
         boolean drawerItemsMoving = step(drawerFocus, dt);
@@ -1498,6 +1517,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float cx = base.centerX(), cy = base.centerY();
         cell.set(cx - bw * s / 2, cy - bh * s / 2, cx + bw * s / 2, cy + bh * s / 2);
         float r = r0 * s;
+        boolean tilted = picksOn() && zone == Z_SHELF && i == shelfIndex && fc > 0.01f && tiltBegin(c, cx, cy);
         // Shadow at the resting icon size, enlarged by the transform (so the blur stays cached): short at rest, deep
         // and lower when focused.
         c.save();
@@ -1513,6 +1533,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (tileShaders.length != shelf.size() || tileShaderH != bh) {
                 tileShaders = new Shader[shelf.size()];
                 tileShaderH = bh;
+                specTile = null;
                 tileGlow = new LinearGradient(0, -bh / 2, 0, 0, 0x14FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP);
             }
             if (tileShaders[i] == null) {
@@ -1536,11 +1557,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
             tileFill.setShader(null);
             c.restore();
-            Backdrop scene = picksOn() && fc > 0.01f && it.pkg != null ? appScene.get(it.pkg) : null;
+            Backdrop scene = picksOn() && fc > 0.01f && it.pkg != null && i == sceneIndex ? appScene.get(it.pkg) : null;
             if (scene != null) {
-                drawCover(c, scene.wide, scene.wideShader, cell, r, fc);
-                tileFill.setColor(Ui.alpha(0xFF000000, 0.42f * fc));
-                c.drawRoundRect(cell, r, r, tileFill);
+                // Waits SCENE_DELAY_MS (just passing through shows nothing), fades in, then zooms out slowly and settles.
+                float t = (SystemClock.uptimeMillis() - sceneAt - SCENE_DELAY_MS) / 1000f;
+                float in = motionOn() ? Ui.clamp(t * 1000 / SCENE_IN_MS) : 1;
+                float p = motionOn() ? Ui.clamp(t * 1000 / SCENE_ZOOM_MS) : 1, e = 1 - (1 - p) * (1 - p) * (1 - p);
+                float a = fc * in;
+                if (a > 0.004f) {
+                    drawCover(c, scene.wide, scene.wideShader, cell, r, a, 1.28f - 0.24f * e, 0.05f - 0.065f * e);
+                    tileFill.setColor(Ui.alpha(0xFF000000, 0.42f * a));
+                    c.drawRoundRect(cell, r, r, tileFill);
+                }
             }
             drawLogo(c, it, cell, s, picksOn() && BRAND_DEEP.containsKey(it.key) || scene != null && fc > 0.5f ? 1 : style[2]);
         } else if (it.logo != null) {
@@ -1564,7 +1592,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             rim.setShader(null);
             rim.setColor(Ui.alpha(0xFFFFFFFF, (picksOn() ? 0.35f : 0.85f) * fc));
             c.drawRoundRect(tmp, r - inset, r - inset, rim);
+            if (picksOn()) {
+                if (specTile == null) specTile = spec(bw, bh);
+                drawSpec(c, specTile, cx, cy, s, bw, bh, r0, fc);
+            }
         }
+        if (tilted) c.restore();
     }
 
     /**
@@ -1954,6 +1987,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Sets the springs' targets from the current focus (snap: no animation). */
     private void retarget(boolean snap) {
         revealShelf(snap);
+        int scene = picksOn() && zone == Z_SHELF && !sheetOpen ? shelfIndex : -1;
+        if (scene != sceneIndex) {
+            sceneIndex = scene;
+            sceneAt = SystemClock.uptimeMillis();
+        }
+        if (!snap && motionOn() && (lastDx != 0 || lastDy != 0) && (zone == Z_SHELF || zone == Z_ROWS)) {
+            tiltX.velocity += lastDx * 90;
+            tiltY.velocity -= lastDy * 70;
+        }
+        lastDx = lastDy = 0;
         if (picksOn() && !sheetOpen && zone != Z_DRAWER && zone != WIDGETS) followBackdrop();   // Back, the drawer…: the photo follows
         // Only the group whose focus changed is redrawn (moving along the shelf doesn't redraw the hero or capsule).
         boolean tilesChanged = aim(tileFocus, !sheetOpen && zone == Z_SHELF ? shelfIndex : -1, snap);
@@ -2325,6 +2368,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void move(int dx, int dy) {
+        lastDx = dx;
+        lastDy = dy;
         if (sheetOpen) {
             moveGrid(dx, dy);
             return;
@@ -3125,6 +3170,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float bw = base.width(), bh = base.height(), r0 = 20 * k;
         float cx = base.centerX(), cy = base.centerY();
         cell.set(cx - bw * s / 2, cy - bh * s / 2, cx + bw * s / 2, cy + bh * s / 2);
+        boolean tilted = zone == Z_ROWS && r == rowIndex && i == rowCol && f > 0.01f && tiltBegin(c, cx, cy);
         c.save();
         c.translate(cx, cy);
         c.scale(s, s);
@@ -3159,7 +3205,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             rim.setShader(null);
             rim.setColor(Ui.alpha(0xFFFFFFFF, 0.85f * f));
             c.drawRoundRect(tmp, r0 * s - inset, r0 * s - inset, rim);
+            if (specCard == null) specCard = spec(bw, bh);
+            drawSpec(c, specCard, cx, cy, s, bw, bh, r0, f);
         }
+        if (tilted) c.restore();
         fitPaint.set(rowCardTitle);
         if (p.title != null) c.drawText(TextUtils.ellipsize(p.title, fitPaint, bw, TextUtils.TruncateAt.END).toString(),
                 base.left, base.bottom + (44 + 12 * f) * k, rowCardTitle);
@@ -3169,14 +3218,60 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
     }
 
+    /** "Remove animations" (or animator scale 0) in the TV's settings: no tilt, no zoom. */
+    private static boolean motionOn() {
+        return android.animation.ValueAnimator.areAnimatorsEnabled();
+    }
+
+    /** Applies the focus tilt around (cx, cy); returns false (nothing applied) when it has settled. */
+    private boolean tiltBegin(Canvas c, float cx, float cy) {
+        if (Math.abs(tiltX.value) < 0.05f && Math.abs(tiltY.value) < 0.05f) return false;
+        camera3d.save();
+        camera3d.setLocation(0, 0, -28);
+        camera3d.rotateY(-tiltX.value);
+        camera3d.rotateX(tiltY.value);
+        camera3d.getMatrix(tiltMatrix);
+        camera3d.restore();
+        tiltMatrix.preTranslate(-cx, -cy);
+        tiltMatrix.postTranslate(cx, cy);
+        c.save();
+        c.concat(tiltMatrix);
+        return true;
+    }
+
+    /** The specular highlight over a focused item (drawn in its centered, unscaled coordinates), shifted by the tilt. */
+    private void drawSpec(Canvas c, LinearGradient shader, float cx, float cy, float s, float bw, float bh, float r0, float f) {
+        specMatrix.setTranslate((-tiltX.value * 7 + 0) * k, (tiltY.value * 7) * k);
+        shader.setLocalMatrix(specMatrix);
+        specPaint.setShader(shader);
+        specPaint.setAlpha(Math.round(255 * f));
+        c.save();
+        c.translate(cx, cy);
+        c.scale(s, s);
+        tmp.set(-bw / 2, -bh / 2, bw / 2, bh / 2);
+        c.drawRoundRect(tmp, r0, r0, specPaint);
+        c.restore();
+        specPaint.setShader(null);
+    }
+
+    private static LinearGradient spec(float bw, float bh) {
+        return new LinearGradient(-bw / 2, -bh / 2, bw * 0.15f, bh / 2, new int[] {0x47FFFFFF, 0x0DFFFFFF, 0x00FFFFFF},
+                new float[] {0, 0.38f, 0.62f}, Shader.TileMode.CLAMP);
+    }
+
     /** `image` filling `cell` like CSS cover (cropped, never stretched), rounded, at `alpha`. */
     private void drawCover(Canvas c, Bitmap image, BitmapShader shader, RectF cell, float r, float alpha) {
+        drawCover(c, image, shader, cell, r, alpha, 1, 0);
+    }
+
+    /** The same, `zoom` times bigger and shifted by `shift` of the cell's width (the scene's slow zoom). */
+    private void drawCover(Canvas c, Bitmap image, BitmapShader shader, RectF cell, float r, float alpha, float zoom, float shift) {
         int iw = image.getWidth(), ih = image.getHeight();
-        float sc = Math.max(cell.width() / iw, cell.height() / ih), lw = cell.width() / sc, lh = cell.height() / sc;
+        float sc = Math.max(cell.width() / iw, cell.height() / ih) * zoom, lw = cell.width() / sc, lh = cell.height() / sc;
         c.save();
         c.translate(cell.centerX(), cell.centerY());
         c.scale(sc, sc);
-        coverMatrix.setTranslate(-iw / 2f, -ih / 2f);
+        coverMatrix.setTranslate(-iw / 2f + shift * cell.width() / sc, -ih / 2f);
         shader.setLocalMatrix(coverMatrix);
         imageFill.setShader(shader);
         imageFill.setAlpha(Math.round(255 * alpha));
