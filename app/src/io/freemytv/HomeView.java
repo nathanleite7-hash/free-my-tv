@@ -144,7 +144,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final List<List<Recs.Pick>> rowItems = new ArrayList<>();
     private final List<String> rowTitles = new ArrayList<>(), rowSubtitles = new ArrayList<>();
     private final List<Boolean> rowRanked = new ArrayList<>(), rowSquare = new ArrayList<>();
-    private boolean recentRow;   // row 0 is "Recently watched" (the only row whose cards carry their service's chip)
+    private final List<Boolean> rowChip = new ArrayList<>();   // rows that mix services: their cards carry its chip
     /**
      * Top 10 rows, as on Netflix: an outlined number as tall as the card, then the title's poster overlapping its right
      * side. Each number takes the width it needs ("1" narrow, "10" wide).
@@ -195,7 +195,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // At the top: tabs (0 to 2) and icon-only buttons (3 to 5); the three cards
     private int tab, topIndex, cardIndex;
     /** topIndex of the dollar, weather and time between the tabs and the round buttons: OK opens the drawer. */
-    private static final int GLANCE = 99;
+    private static final int GLANCE = 99, SEARCH = 98;   // SEARCH: the magnifier left of the tabs
+    private final RectF searchRect = new RectF();
+    private final Spring searchFocus = new Spring(0.26f, 0.85f, 0);
+    /** The last search's results: a row above the others until the home screen is left for a while. */
+    private List<Recs.Pick> searchResults = new ArrayList<>();
+    private String searchQuery = "";
+    private long searchAt;
+    private final Paint searchStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Spring glanceFocus = new Spring(0.26f, 0.85f, 0);
     private final RectF glanceRect = new RectF();
     private int widgetIndex;    // with TalkBack on, the drawer's weather (0) or quotes (1) card can take the focus
@@ -514,6 +521,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     void resume() {
         if (running) return;
         running = true;
+        if (!searchResults.isEmpty() && SystemClock.uptimeMillis() - searchAt > 15 * 60_000L) searchResults = new ArrayList<>();
         checkNight(false);
         boolean h24 = Prefs.clock24();
         if (h24 != clock24) {   // 12/24 hours changed in the TV's settings: the clock and the drawer's times again
@@ -608,7 +616,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void setLightButtons(List<HomeApps.Item> list) {
         lightButtons.clear();
         for (HomeApps.Item it : list) if (it.kind == HomeApps.SETTINGS) lightButtons.add(it);
-        if (zone == Z_TOP && topIndex != GLANCE && topIndex >= 3 + lightButtons.size()) {
+        if (zone == Z_TOP && topIndex != GLANCE && topIndex != SEARCH && topIndex >= 3 + lightButtons.size()) {
             topIndex = 2 + lightButtons.size();
             if (topIndex < 3 && !picksOn()) zone = Z_SHELF;   // without the picks the tabs can't hold focus
             else if (topIndex < 3) selectTab(topIndex);
@@ -836,7 +844,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean statusMoving = step(statusFocus, dt);
         boolean heroMoving = heroFocus.step(dt);
         glanceFocus.target = !sheetOpen && zone == Z_TOP && topIndex == GLANCE ? 1 : 0;
-        boolean topMoving = step(topFocus, dt) | glanceFocus.step(dt), cardsMoving = step(cardFocus, dt);
+        searchFocus.target = !sheetOpen && zone == Z_TOP && topIndex == SEARCH ? 1 : 0;
+        boolean topMoving = step(topFocus, dt) | glanceFocus.step(dt) | searchFocus.step(dt), cardsMoving = step(cardFocus, dt);
         boolean rowsMoving = false, scrolling = scrollY.step(dt);
         for (int r = 0; r < rowItems.size() && r < MAX_ROWS; r++) rowsMoving |= step(rowFocus[r], dt) | rowShift[r].step(dt);
         if (rowsMoving) positionRows();
@@ -2587,6 +2596,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             it = drawerItems.get(drawerIndex);
             r = drawerRects[drawerIndex];
         } else if (zone == Z_TOP) {
+            if (topIndex == SEARCH) {
+                click.open();
+                askSearch();
+                return;
+            }
             if (topIndex == GLANCE) {
                 click.open();
                 openDrawer();   // the widgets: the forecast, the prices, the inputs
@@ -2927,6 +2941,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 return label(others, i) + ", " + Ui.trf("{i} of {n}", "i", i + 1, "n", others.size());
             case Z_TOP:
                 if (i == GLANCE) return Ui.tr("Dollar, weather and time. OK opens the widgets.");
+                if (i == SEARCH) return Ui.tr("Search");
                 if (i >= 3) return label(lightButtons, i - 3);
                 return Ui.trf("{name}, tab {i} of {n}", "name", tabs()[i], "i", i + 1, "n", 3);
             case Z_CARDS: return i < cards.size() ? pickText(cards.get(i)) : "";
@@ -2960,8 +2975,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 break;
             }
             case Z_TOP:
-                if (i == GLANCE) {
-                    a11yRect.set(glanceRect);
+                if (i == GLANCE || i == SEARCH) {
+                    a11yRect.set(i == GLANCE ? glanceRect : searchRect);
                     dy = status.getTranslationY();
                     break;
                 }
@@ -3139,13 +3154,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (barTab == null) return;
         // The tabs inside the glass capsule; Settings alone at the right (the inputs and Live TV live in the drawer).
         float y = (BAR_Y + BAR_PAD) * k, ih = (BAR_H - 2 * BAR_PAD) * k, x = (MARGIN + BAR_PAD) * k;
+        // The magnifier first, a round button like Settings; the tabs' capsule after it.
+        searchRect.set(MARGIN * k, (BAR_Y + BAR_H / 2 - ROUND / 2) * k, (MARGIN + ROUND) * k, (BAR_Y + BAR_H / 2 + ROUND / 2) * k);
+        float tabsLeft = picksOn() ? MARGIN + ROUND + 16 : MARGIN;
+        x = (tabsLeft + BAR_PAD) * k;
         for (int i = 0; i < 3; i++) {
             float tw = barTab.measureText(tabs()[i]);
             topRects[i].set(x, y, x + tw + 2 * TAB_PAD * k, y + ih);
             snap(topRects[i]);
             x = topRects[i].right + 4 * k;
         }
-        barRect.set(MARGIN * k, BAR_Y * k, x - 4 * k + BAR_PAD * k, (BAR_Y + BAR_H) * k);
+        barRect.set(tabsLeft * k, BAR_Y * k, x - 4 * k + BAR_PAD * k, (BAR_Y + BAR_H) * k);
         snap(barRect);
         float b = ROUND * k, right = CONTENT_R * k, cy = (BAR_Y + BAR_H / 2) * k;
         for (int i = lightButtons.size() - 1; i >= 0; i--) {
@@ -3186,8 +3205,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         List<List<Recs.Pick>> items = new ArrayList<>();
         List<String> titles = new ArrayList<>(), subtitles = new ArrayList<>();
         List<Boolean> ranked = new ArrayList<>(), square = new ArrayList<>();
+        List<Boolean> chips = new ArrayList<>();
+        if (!searchResults.isEmpty()) {
+            items.add(searchResults);
+            titles.add(Ui.trf("Results for “{q}”", "q", searchQuery));
+            subtitles.add("");
+            ranked.add(false);
+            square.add(false);
+            chips.add(true);
+        }
         List<Recs.Pick> recent = Recent.list(getContext());
         if (!recent.isEmpty()) {
+            chips.add(true);
             items.add(recent);
             titles.add(Ui.tr("Recently watched"));
             subtitles.add("");
@@ -3204,6 +3233,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             subtitles.add(row.subtitle);
             ranked.add(row.ranked);
             square.add(row.square);
+            chips.add(false);
         }
         boolean rowsChanged = !titles.equals(rowTitles) || !subtitles.equals(rowSubtitles) || items.size() != rowItems.size();
         for (int i = 0; !rowsChanged && i < items.size(); i++) rowsChanged = !sameRecent(items.get(i), rowItems.get(i));
@@ -3218,7 +3248,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             rowRanked.addAll(ranked);
             rowSquare.clear();
             rowSquare.addAll(square);
-            recentRow = !recent.isEmpty();
+            rowChip.clear();
+            rowChip.addAll(chips);
             if (w > 0) layoutRows();
         }
         if (zone == Z_ROWS && rowIndex >= rowItems.size()) rowIndex = Math.max(0, rowItems.size() - 1);
@@ -3413,7 +3444,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (card != null) drawCover(c, card.bitmap, card.shader, cell, r0 * s, 1);
             else drawCover(c, b.wide, b.wideShader, cell, r0 * s, 1);
             // Only "Recently watched" mixes services: elsewhere the row's title already names it.
-            HomeApps.Item app = r == 0 && recentRow ? shelfItem(p.pkg) : null;
+            HomeApps.Item app = r < rowChip.size() && rowChip.get(r) ? shelfItem(p.pkg) : null;
             if (app != null && app.logo != null) {
                 float lh = 16 * k * s, lw = Math.min(90 * k * s, app.logo.getWidth() * lh / app.logo.getHeight());
                 tmp.set(cell.left + 16 * k * s, cell.bottom - (16 + 34) * k * s, cell.left + 16 * k * s + lw + 22 * k * s, cell.bottom - 16 * k * s);
@@ -3892,6 +3923,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             RectF r = topRects[3 + i];
             barClip.addCircle(r.centerX(), r.centerY(), r.width() / 2, android.graphics.Path.Direction.CW);
         }
+        barClip.addCircle(searchRect.centerX(), searchRect.centerY(), searchRect.width() / 2, android.graphics.Path.Direction.CW);
         int bottom = Math.round(barRect.bottom + 60 * k);
         barBlur.setPosition(0, 0, w, bottom);
         barBlur.setAlpha(status.getAlpha());
@@ -3919,6 +3951,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             fill.setAlpha(255);
         }
         if (picksOn()) {
+            drawSearchButton(c);
             float rad = barRect.height() / 2;
             barGlass(c, barRect, rad, 1);
             float focus = Ui.clamp(topFocus[tab].value);
@@ -4004,6 +4037,70 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         Symbols.draw(getContext(), c, "bedtime", right - sw2 - size * 0.9f, cy, size, lQuote.getColor());
     }
 
+    /** The magnifier: a glass circle (white when focused) with the lens drawn as strokes. */
+    private void drawSearchButton(Canvas c) {
+        float f = Ui.clamp(searchFocus.value), s = 1 + 0.08f * f, rad = searchRect.width() / 2 * s;
+        float cx = searchRect.centerX(), cy = searchRect.centerY();
+        cell.set(cx - rad, cy - rad, cx + rad, cy + rad);
+        barGlass(c, cell, rad, 1 - f);
+        if (f > 0.01f) {
+            fill.setShader(null);
+            fill.setColor(Ui.alpha(0xFFFFFFFF, f));
+            c.drawCircle(cx, cy, rad, fill);
+        }
+        searchStroke.setStyle(Paint.Style.STROKE);
+        searchStroke.setStrokeCap(Paint.Cap.ROUND);
+        searchStroke.setStrokeWidth(3 * k * s);
+        searchStroke.setColor(blend(0xEBFFFFFF, INK, f));
+        float lens = 9 * k * s, lx = cx - 3 * k * s, ly = cy - 3 * k * s;
+        c.drawCircle(lx, ly, lens, searchStroke);
+        float d = lens * 0.7071f;
+        c.drawLine(lx + d, ly + d, lx + d + 8 * k * s, ly + d + 8 * k * s, searchStroke);
+    }
+
+    // MARK: - Search
+
+    private void askSearch() {
+        android.widget.EditText field = new android.widget.EditText(activity);
+        field.setSingleLine(true);
+        field.setHint(Ui.tr("A movie or a show"));
+        field.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
+        android.app.AlertDialog dialog = new android.app.AlertDialog.Builder(activity, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle(Ui.tr("Search your apps"))
+                .setView(field)
+                .setPositiveButton(Ui.tr("Search"), (d, which) -> search(field.getText().toString()))
+                .setNegativeButton(Ui.tr("Cancel"), null)
+                .create();
+        field.setOnEditorActionListener((v, action, event) -> {
+            dialog.dismiss();
+            search(field.getText().toString());
+            return true;
+        });
+        dialog.show();
+    }
+
+    private void search(String text) {
+        String q = text.trim();
+        if (q.isEmpty()) return;
+        showToast(Ui.trf("Searching for “{q}”…", "q", q));
+        rowsData.search(q, results -> {
+            if (!running) return;
+            if (results.isEmpty()) {
+                showToast(Ui.trf("Nothing for “{q}” on your apps.", "q", q));
+                return;
+            }
+            searchResults = results;
+            searchQuery = q;
+            searchAt = SystemClock.uptimeMillis();
+            updatePicks();
+            zone = Z_ROWS;
+            rowIndex = 0;
+            rowCol = 0;
+            followBackdrop();
+            retarget(false);
+        });
+    }
+
     private boolean moveLight(int dx, int dy) {
         switch (zone) {
             case Z_SHELF:
@@ -4065,7 +4162,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     // Order: the tabs (0-2), the dollar/weather/time (GLANCE), the round buttons (3…).
                     boolean glance = !glanceRect.isEmpty();
                     int next;
-                    if (topIndex == GLANCE) next = dx > 0 ? (lightButtons.isEmpty() ? GLANCE : 3) : (picksOn() ? 2 : GLANCE);
+                    if (topIndex == SEARCH) next = dx > 0 ? 0 : SEARCH;
+                    else if (topIndex == 0 && dx < 0 && picksOn()) next = SEARCH;
+                    else if (topIndex == GLANCE) next = dx > 0 ? (lightButtons.isEmpty() ? GLANCE : 3) : (picksOn() ? 2 : GLANCE);
                     else if (topIndex == 2 && dx > 0 && glance) next = GLANCE;
                     else if (topIndex == 3 && dx < 0 && glance) next = GLANCE;
                     else next = Math.max(picksOn() ? 0 : 3, Math.min(2 + lightButtons.size(), topIndex + dx));

@@ -294,6 +294,43 @@ final class Rows {
         return p;
     }
 
+    // MARK: - Search (the top bar's magnifier)
+
+    /**
+     * Movies and shows matching the text that are on one of the TV's services, best matches first. On a background
+     * thread: about one TMDB request per result. Calls `done` on the main thread (an empty list when nothing matched).
+     */
+    void search(String query, java.util.function.Consumer<List<Recs.Pick>> done) {
+        io.execute(() -> {
+            List<Recs.Pick> out = new ArrayList<>();
+            try {
+                Recs recs = Recs.get(context);
+                String lang = Recs.tmdbLanguage();
+                Map<Integer, String> movieGenres = genres(recs, "movie", lang), tvGenres = genres(recs, "tv", lang);
+                JSONArray found = recs.tmdb("/search/multi?include_adult=false&language=" + lang + "&query="
+                        + URLEncoder.encode(query, "UTF-8")).getJSONArray("results");
+                for (int i = 0; i < found.length() && i < 12 && out.size() < PER_ROW; i++) {
+                    JSONObject o = found.getJSONObject(i);
+                    String kind = o.optString("media_type");
+                    if (!kind.equals("movie") && !kind.equals("tv")) continue;
+                    JSONObject where = recs.tmdb("/" + kind + "/" + o.optInt("id") + "/watch/providers").optJSONObject("results");
+                    JSONObject here = where == null ? null : where.optJSONObject(Recs.REGION);
+                    JSONArray flat = here == null ? null : here.optJSONArray("flatrate");
+                    String[] s = null;
+                    for (int j = 0; flat != null && j < flat.length() && s == null; j++) {
+                        s = recs.tvService(flat.getJSONObject(j).optString("provider_name"), flat.getJSONObject(j).optInt("provider_id"));
+                    }
+                    if (s == null) continue;   // not on any of the TV's apps
+                    Recs.Pick p = pick(o, kind, s, kind.equals("movie") ? movieGenres : tvGenres, true);
+                    if (p != null) out.add(p);
+                }
+            } catch (Exception e) {
+                AppLog.w("search: " + e.getMessage());
+            }
+            main.post(() -> done.accept(out));
+        });
+    }
+
     // MARK: - Spotify (its editorial playlists: names and covers from the public oEmbed, no account)
 
     private static final String[][] PLAYLISTS = {
