@@ -107,7 +107,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static final float BAR_Y = 48, BAR_H = 72, BAR_PAD = 6, TAB_PAD = 30, ROUND = 64, BAR_SCRIM_H = 230;
     // Rows under the apps (trending movies, trending shows): cards in the picks' own 2.35:1, drawn on a layer below the
     // screen that scrolls up with the focus; the background turns into the photo's dark frosted version as it does.
-    private static final float ROWS_LAYER_TOP = 1100, ROWS_LAYER_H = 1420, ROW0_TITLE = 1150, ROW0_TOP = 1174, ROW_STEP = 440;
+    /** The rows' vertical rhythm (see rowHeight); the first title sits the same 60 px under the apps' tiles. */
+    private static final float ROW_TITLE_TO_CARD = 30, ROW_CAPTIONS = 92, ROW_AIR = 60, ROW_TITLE_CAP = 22;
+    private static final float ROWS_LAYER_TOP = 1100, ROWS_LAYER_H = 1420, ROW0_TITLE = 1166, ROW0_TOP = 1196, ROW_STEP = 440;
     private static final float ROW_CARD_W = 432, ROW_CARD_H = 243, ROW_GAP = 32, ROW_SCROLL_PAD = 330, AMBIENT_AT = 400;
     /** The quotes' row, under the round buttons (the tabs moved up beside them). */
     private static final float L_QUOTES_ROW = 192;
@@ -1773,7 +1775,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private static List<HomeApps.Item> drawerList(Context c) {
         List<HomeApps.Item> list = HomeApps.quickSettings(c);   // picture and sound first: the TV's most used settings
-        list.addAll(HomeApps.allInputs(c));
+        // V1.6 (the panel): the TV's settings, not the inputs and Live TV (asked: unused here).
+        if (!Recs.hasKey(c)) list.addAll(HomeApps.allInputs(c));
         list.addAll(HomeApps.drawerShortcuts(c));
         return list;
     }
@@ -3574,8 +3577,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** How far row r is below the first (1080p px): a square row is taller. */
     private float rowOffset(int r) {
         float y = 0;
-        for (int i = 0; i < r; i++) y += ROW_STEP + (square(i) ? SQUARE - ROW_CARD_H + 30 : 0);
+        for (int i = 0; i < r; i++) y += rowHeight(i);
         return y;
+    }
+
+    /**
+     * One rhythm for every row, from one title's baseline to the next: 30 px to the card, the card, its captions (not
+     * under a Top 10's posters, which carry their titles), then 60 px of air above the next title's capitals.
+     */
+    private float rowHeight(int r) {
+        float card = ranked(r) ? RANK_CARD_H : square(r) ? SQUARE : ROW_CARD_H;
+        return ROW_TITLE_TO_CARD + card + (ranked(r) ? 0 : ROW_CAPTIONS) + ROW_AIR + ROW_TITLE_CAP;
     }
 
     /** Where row r sits on the page (only rows with something in them are kept). */
