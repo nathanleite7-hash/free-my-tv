@@ -515,6 +515,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         cancelReorder(!animated);
         zone = Z_SHELF;
         shelfIndex = 0;
+        cardIndex = rowIndex = rowCol = 0;
+        layoutHeroButton();
         sheetOpen = false;
         drawerOpen = false;
         if (animated) {
@@ -2964,7 +2966,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** The three cards of the current tab (Explore, Movies, Shows) and the background taken from the first one. */
     private void updateCards() {
         List<Recs.Pick> list = recs.now(TAB_KIND[tab]);
-        if (!samePicks(list, cards)) {
+        boolean picksChanged = !samePicks(list, cards);
+        if (picksChanged) {
             cards = list;
             cardIndex = Math.min(cardIndex, Math.max(0, list.size() - 1));
             if (zone == Z_CARDS && list.isEmpty()) {
@@ -2979,22 +2982,38 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 : recs.backdrop(cards.get(Math.min(cardIndex, cards.size() - 1)));
         if (b != null || (cards.isEmpty() && !own)) showBackdrop(b);
         layoutHeroButton();
-        rowMovies = recs.now("movie");
-        rowShows = recs.now("tv");
+        // The rows never repeat what the hero shows (on the Movies tab, its movies are the hero's: that row goes away).
+        List<Recs.Pick> movies = notIn(recs.now("movie"), cards), shows = notIn(recs.now("tv"), cards);
+        boolean rowsChanged = !samePicks(movies, rowMovies) || !samePicks(shows, rowShows);
+        rowMovies = movies;
+        rowShows = shows;
         if (zone == Z_ROWS && rowList(rowIndex).isEmpty()) {
             zone = Z_SHELF;
             retarget(false);
         }
         rowCol = Math.min(rowCol, Math.max(0, rowList(rowIndex).size() - 1));
+        int scenes = appScene.size();
         appScene.clear();
         for (Recs.Pick p : recs.wanted()) {
             if (p.pkg == null || appScene.containsKey(p.pkg)) continue;
             Backdrop sb = recs.backdrop(p);
             if (sb != null && sb.wide != null) appScene.put(p.pkg, sb);
         }
-        rowsDirty = tilesDirty = true;
+        // Only when something changed: this runs every 15 s, and each redraw repaints a hardware layer.
+        rowsDirty |= rowsChanged || picksChanged;
+        tilesDirty |= appScene.size() != scenes || picksChanged;
         heroDirty = true;
         spoken.focusMoved();    // new picks under the focused card
+    }
+
+    private static List<Recs.Pick> notIn(List<Recs.Pick> list, List<Recs.Pick> shown) {
+        List<Recs.Pick> out = new ArrayList<>();
+        for (Recs.Pick p : list) {
+            boolean dup = false;
+            for (Recs.Pick q : shown) dup |= Recs.key(p).equals(Recs.key(q));
+            if (!dup) out.add(p);
+        }
+        return out;
     }
 
     private List<Recs.Pick> rowList(int r) {
