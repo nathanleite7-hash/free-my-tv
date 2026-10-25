@@ -14,6 +14,7 @@
  "Bottom center": "Embaixo, no centro",
  "Bottom left": "Embaixo, à esquerda",
  "Bottom right": "Embaixo, à direita",
+ "Brightness": "Brilho",
  "COMPARISON": "COMPARAÇÃO",
  "Cancel": "Cancelar",
  "City": "Cidade",
@@ -138,6 +139,7 @@
  "Shelf": "Prateleira",
  "Shortcuts": "Atalhos",
  "Show Time Left": "Mostrar tempo restante",
+ "Show now": "Ver agora",
  "Shows": "Séries",
  "Sleep Timer": "Timer de desligamento",
  "Snow": "Neve",
@@ -256,5 +258,6 @@
  "{n} min ago": "há {n} min",
  "{n} ms": "{n} ms",
  "{time} left": "faltam {time}",
+ "← → change the brightness. The photos dim, the clock stays easy to read.": "← → mudam o brilho. As fotos escurecem, o relógio continua fácil de ler.",
  "← → to move · OK to drop · Back to cancel": "← → para mover · OK para soltar · Voltar para cancelar"
 }

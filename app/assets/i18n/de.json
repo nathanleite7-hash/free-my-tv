@@ -14,6 +14,7 @@
  "Bottom center": "Unten Mitte",
  "Bottom left": "Unten links",
  "Bottom right": "Unten rechts",
+ "Brightness": "Helligkeit",
  "COMPARISON": "VERGLEICH",
  "Cancel": "Abbrechen",
  "City": "Stadt",
@@ -138,6 +139,7 @@
  "Shelf": "Leiste",
  "Shortcuts": "Verknüpfungen",
  "Show Time Left": "Restzeit anzeigen",
+ "Show now": "Jetzt zeigen",
  "Shows": "Serien",
  "Sleep Timer": "Sleep-Timer",
  "Snow": "Schnee",
@@ -256,5 +258,6 @@
  "{n} min ago": "vor {n} Min.",
  "{n} ms": "{n} ms",
  "{time} left": "noch {time}",
+ "← → change the brightness. The photos dim, the clock stays easy to read.": "← → ändern die Helligkeit. Die Fotos werden dunkler, die Uhr bleibt gut lesbar.",
  "← → to move · OK to drop · Back to cancel": "← → verschieben · OK ablegen · Zurück abbrechen"
 }

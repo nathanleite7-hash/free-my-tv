@@ -109,7 +109,8 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     private final Matrix matrix = new Matrix();
     private final float[] placeA = new float[3], placeB = new float[3];
     private final Paint photoPaint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
-    private final Paint black = new Paint();
+    private final Paint black = new Paint(), dim = new Paint();
+    private int bright = 100;
     private final Paint shadowPaint = new Paint(Paint.FILTER_BITMAP_FLAG);
     private final Paint glassPaint = new Paint();
     private final Set<String> failed = new HashSet<>();     // Recs.key: a movie and a series can have the same ID
@@ -164,6 +165,7 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     void start() {
         if (running) return;
         running = true;
+        bright = Prefs.saverBright();
         if (worker.isShutdown()) worker = Executors.newSingleThreadExecutor();
         startedAt = clock();
         lastFrame = 0;
@@ -451,6 +453,11 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             drawPhoto(canvas, incoming, placeB, e);
         }
 
+        // Brightness dims the photos only: the clock and the credit stay readable.
+        if (bright < 100) {
+            dim.setColor(Math.round(255 * (1 - bright / 100f)) << 24);
+            canvas.drawRect(0, 0, w, h, dim);
+        }
         if (chromeDirty) recordChrome();
         chrome.setAlpha(first);
         chrome.draw(canvas);

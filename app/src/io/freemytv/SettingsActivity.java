@@ -134,7 +134,7 @@ public class SettingsActivity extends Activity {
 
     static final class SettingsView extends View implements Choreographer.FrameCallback {
         private static final int MAIN = 0, HOME_CHOICE = 1, HOME_SETTINGS = 2, REMOTE_KEYS = 3, PICKER = 4, SHELF_EDIT = 5,
-                POWER = 6;
+                POWER = 6, SAVER = 7;
         private static final float LIST_ROW_H = 68, LIST_ROW_GAP = 6;
         private static final int PICK_VISIBLE = 9;
         private static final float LIST_X = 760, LIST_R = 1800, LIST_TOP = 226, ROW_GAP = 8, CHOICE_H = 104;
@@ -272,10 +272,11 @@ public class SettingsActivity extends Activity {
                 }
                 case HOME_SETTINGS:
                 case REMOTE_KEYS:
+                case SAVER:
                 case POWER: {
                     boolean keys = screen == REMOTE_KEYS;
                     String[] labels = listLabels(), values = listValues();
-                    int at = keys ? row : pickScroll + row;
+                    int at = keys || screen == SAVER ? row : pickScroll + row;
                     return at < labels.length ? labels[at] + ", " + values[at] : "";
                 }
                 case PICKER: {
@@ -409,6 +410,7 @@ public class SettingsActivity extends Activity {
                 case PICKER: return Math.min(PICK_VISIBLE, pickLabels.size());
                 case SHELF_EDIT: return Math.min(PICK_VISIBLE, shelfRows.size());
                 case POWER: return powerRows().length;
+                case SAVER: return 2;
                 default: return Prefs.KEYS.length;
             }
         }
@@ -447,6 +449,7 @@ public class SettingsActivity extends Activity {
                 case SHELF_EDIT: return editingTop ? 4 : 3;
                 case REMOTE_KEYS: return 5;
                 case POWER: return 6;
+                case SAVER: return 1;
                 case PICKER: return pickFor <= PICK_SLEEP ? 6 : pickFor <= 0 ? 2 : 5;
                 default: return focus;
             }
@@ -713,7 +716,7 @@ public class SettingsActivity extends Activity {
                 case KeyEvent.KEYCODE_DPAD_RIGHT:
                     if (down && screen == SHELF_EDIT) {
                         moveShelfApp(e.getKeyCode() == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
-                    } else if (down && (screen == HOME_SETTINGS || screen == REMOTE_KEYS || screen == POWER)) {
+                    } else if (down && (screen == HOME_SETTINGS || screen == REMOTE_KEYS || screen == POWER || screen == SAVER)) {
                         adjust(e.getKeyCode() == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
                     }
                     whyRows = null;   // a value or the rows' order changed: what each row needs may have too
@@ -751,7 +754,7 @@ public class SettingsActivity extends Activity {
                                 screen = REMOTE_KEYS;
                             } else {
                                 focus = screen == HOME_SETTINGS ? 2 : screen == SHELF_EDIT ? (editingTop ? 4 : 3)
-                                        : screen == REMOTE_KEYS ? 5 : screen == POWER ? 6 : 0;
+                                        : screen == REMOTE_KEYS ? 5 : screen == POWER ? 6 : screen == SAVER ? 1 : 0;
                                 screen = MAIN;
                             }
                         }
@@ -968,11 +971,13 @@ public class SettingsActivity extends Activity {
         }
 
         private String[] listLabels() {
-            return screen == REMOTE_KEYS ? keyLabels() : screen == POWER ? powerLabels() : settingLabels();
+            return screen == REMOTE_KEYS ? keyLabels() : screen == POWER ? powerLabels()
+                    : screen == SAVER ? new String[] {Ui.tr("Brightness"), Ui.tr("Show now")} : settingLabels();
         }
 
         private String[] listValues() {
-            return screen == REMOTE_KEYS ? keyValues() : screen == POWER ? powerValues() : settingValues();
+            return screen == REMOTE_KEYS ? keyValues() : screen == POWER ? powerValues()
+                    : screen == SAVER ? new String[] {Prefs.saverBright() + "%", ""} : settingValues();
         }
 
         private static String onOff(boolean on) {
@@ -1046,6 +1051,10 @@ public class SettingsActivity extends Activity {
                     SleepOverlay.update(getContext());
                 }
                 focus = powerFocus(row);   // rows come and go with the switches above them
+                return;
+            }
+            if (screen == SAVER) {
+                if (focus == 0) Prefs.setSaverBright(Prefs.saverBright() + 10 * dir);
                 return;
             }
             if (screen == REMOTE_KEYS) {
@@ -1324,15 +1333,27 @@ public class SettingsActivity extends Activity {
                     LIST_X * k + 30 * k, hy, hint);
         }
 
+        /** An iOS switch, its right edge at `right`: green when on. */
+        private void drawSwitch(Canvas c, float right, float cy, boolean isOn, float f) {
+            float sw = 54 * k, sh = 32 * k;
+            tmp.set(right - sw, cy - sh / 2, right, cy + sh / 2);
+            card.setColor(isOn ? 0xFF30D158 : blend(0x38FFFFFF, 0x2E000000, f));
+            c.drawRoundRect(tmp, sh / 2, sh / 2, card);
+            float d = 26 * k, kx = isOn ? right - 3 * k - d / 2 : right - sw + 3 * k + d / 2;
+            card.setColor(0xFFFFFFFF);
+            c.drawCircle(kx, cy, d / 2, card);
+        }
+
         private void drawList(Canvas c) {
             boolean keys = screen == REMOTE_KEYS;
             String[] labels = listLabels();
             String[] values = listValues();
             Paint heading = detailTitle;
-            c.drawText(keys ? Ui.tr("Remote Buttons") : screen == POWER ? Ui.tr("Sleep Timer") : Ui.tr("Home Settings"),
+            c.drawText(keys ? Ui.tr("Remote Buttons") : screen == POWER ? Ui.tr("Sleep Timer") : screen == SAVER ? Ui.tr("Screensaver") : Ui.tr("Home Settings"),
                     LIST_X * k, (LIST_TOP - 30) * k, heading);
             float pitch = LIST_ROW_H + LIST_ROW_GAP;
-            int rows = keys ? labels.length : rowCount(), from = keys ? 0 : pickScroll;
+            String on = Ui.tr("On"), off = Ui.tr("Off");
+            int rows = keys ? labels.length : rowCount(), from = keys || screen == SAVER ? 0 : pickScroll;
             for (int i = 0; i < rows; i++) {
                 float y = (LIST_TOP + 20 + i * pitch) * k;
                 rowRect.set(LIST_X * k, y, LIST_R * k, y + LIST_ROW_H * k);
@@ -1344,7 +1365,25 @@ public class SettingsActivity extends Activity {
                 if (locked) rowLabel.setColor(blend(0x73FFFFFF, 0x731C1C1E, f));
                 float base = rowRect.centerY() + Ui.halfCap(rowLabel);
                 c.drawText(labels[from + i], rowRect.left + 30 * k, base, rowLabel);
-                c.drawText(values[from + i], rowRect.right - 30 * k, base, rowValue);
+                String value = values[from + i];
+                if (!locked && (value.equals(on) || value.equals(off))) {
+                    drawSwitch(c, rowRect.right - 30 * k, rowRect.centerY(), value.equals(on), f);
+                } else if (screen == SAVER && i == 0) {
+                    float vx = rowRect.right - 30 * k - rowValue.measureText("100%");
+                    c.drawText(value, rowRect.right - 30 * k, base, rowValue);
+                    float bw = 240 * k, bx = vx - 24 * k - bw, cy = rowRect.centerY();
+                    card.setColor(blend(0x2EFFFFFF, 0x260A0A0C, f));
+                    tmp.set(bx, cy - 5 * k, bx + bw, cy + 5 * k);
+                    c.drawRoundRect(tmp, 5 * k, 5 * k, card);
+                    card.setColor(blend(0xFFFFFFFF, 0xFF0A0A0C, f));
+                    tmp.right = bx + bw * (Prefs.saverBright() - 20) / 80f;
+                    c.drawRoundRect(tmp, 5 * k, 5 * k, card);
+                } else if (screen == SAVER) {
+                    float cw = Symbols.width(getContext(), "chevron_right", 22 * k);
+                    Symbols.draw(getContext(), c, "chevron_right", rowRect.right - 30 * k - cw / 2, rowRect.centerY(), 22 * k, blend(0x99FFFFFF, 0x991C1C1E, f));
+                } else {
+                    c.drawText(value, rowRect.right - 30 * k, base, rowValue);
+                }
             }
             Paint hint = Ui.text(Ui.regular, 23 * k, 0x8CFFFFFF);
             float hy = (LIST_TOP + 20 + rows * pitch + 36) * k;
@@ -1354,6 +1393,7 @@ public class SettingsActivity extends Activity {
             c.drawText(where + (screen == HOME_SETTINGS && from + focus == PHOTOS_ROW ? (Photos.files(getContext()).isEmpty()
                     ? Ui.tr("Send them from a computer: see “Your own photos” in the README.")
                     : Ui.tr("OK removes them; the arrows turn them on or off."))
+                    : screen == SAVER ? Ui.tr("← → change the brightness. The photos dim, the clock stays easy to read.")
                     : screen == POWER && powerRow() != P_SHOW && unavailable(focus) == null ? Ui.tr("OK opens the list. ← → change the value.")
                     : Ui.tr("OK or the arrows change the value.")), LIST_X * k + 30 * k, hy, hint);
             if (keys) {
@@ -1424,9 +1464,16 @@ public class SettingsActivity extends Activity {
                 if (busy()) return;
                 screen = HOME_CHOICE;
                 focus = freeActive() ? 0 : 1;
+            } else if (screen == SAVER) {
+                if (focus == 1) {
+                    pause();
+                    activity.showPreview();
+                }
+                invalidate();
+                return;
             } else if (focus == 1) {
-                pause();
-                activity.showPreview();
+                screen = SAVER;
+                focus = 0;
             } else if (focus == 2) {
                 screen = HOME_SETTINGS;
                 focus = 0;

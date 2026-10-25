@@ -14,6 +14,7 @@
  "Bottom center": "Снизу по центру",
  "Bottom left": "Слева снизу",
  "Bottom right": "Справа снизу",
+ "Brightness": "Яркость",
  "COMPARISON": "СРАВНЕНИЕ",
  "Cancel": "Отмена",
  "City": "Город",
@@ -138,6 +139,7 @@
  "Shelf": "Избранные приложения",
  "Shortcuts": "Ярлыки",
  "Show Time Left": "Показывать оставшееся время",
+ "Show now": "Показать сейчас",
  "Shows": "Сериалы",
  "Sleep Timer": "Таймер сна",
  "Snow": "Снег",
@@ -256,5 +258,6 @@
  "{n} min ago": "{n} мин назад",
  "{n} ms": "{n} мс",
  "{time} left": "осталось {time}",
+ "← → change the brightness. The photos dim, the clock stays easy to read.": "← → меняют яркость. Фото темнеют, часы остаются читаемыми.",
  "← → to move · OK to drop · Back to cancel": "← → — переместить · OK — оставить · Назад — отмена"
 }

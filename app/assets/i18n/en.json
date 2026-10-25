@@ -14,6 +14,7 @@
  "Bottom center": "Bottom center",
  "Bottom left": "Bottom left",
  "Bottom right": "Bottom right",
+ "Brightness": "Brightness",
  "COMPARISON": "COMPARISON",
  "Cancel": "Cancel",
  "City": "City",
@@ -138,6 +139,7 @@
  "Shelf": "Shelf",
  "Shortcuts": "Shortcuts",
  "Show Time Left": "Show Time Left",
+ "Show now": "Show now",
  "Shows": "Shows",
  "Sleep Timer": "Sleep Timer",
  "Snow": "Snow",
@@ -255,5 +257,6 @@
  "{n} min ago": "{n} min ago",
  "{n} ms": "{n} ms",
  "{time} left": "{time} left",
+ "← → change the brightness. The photos dim, the clock stays easy to read.": "← → change the brightness. The photos dim, the clock stays easy to read.",
  "← → to move · OK to drop · Back to cancel": "← → to move · OK to drop · Back to cancel"
 }

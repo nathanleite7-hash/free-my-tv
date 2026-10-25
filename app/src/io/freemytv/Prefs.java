@@ -200,6 +200,10 @@ final class Prefs {
     }
 
     /** The sleep timer's minutes left on screen: over any app (SleepOverlay), or where this TV can't, on the home screen. */
+    /** The screensaver's brightness, 20 to 100 (%). */
+    static int saverBright() { return Math.max(20, Math.min(100, sp().getInt("saverBright", 100))); }
+    static void setSaverBright(int v) { sp().edit().putInt("saverBright", Math.max(20, Math.min(100, v))).apply(); }
+
     static boolean sleepShown() { return sp().getBoolean("sleepShown", true); }
     static void setSleepShown(boolean on) { sp().edit().putBoolean("sleepShown", on).apply(); }
 
