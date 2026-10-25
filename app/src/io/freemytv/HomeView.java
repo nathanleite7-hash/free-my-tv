@@ -59,7 +59,7 @@ import java.util.function.Consumer;
  * Measurements are in a 1920×1080 space (k = width / 1920). The screen is split into layers so the TV's weak GPU only
  * redraws what changed.
  */
-final class HomeView extends ViewGroup implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener, Rows.Listener {
+final class HomeView extends ViewGroup implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener, Rows.Listener, NowPlaying.Listener {
     // tvOS grid (Human Interface Guidelines): content inside the safe area, 80 px from the sides and 60 from top and
     // bottom; 40 px between items; 7 columns of 217 px (the apps). The shelf glass extends 36 px past the tiles (the
     // same padding on all four sides) and the tile corners are concentric with it (glass radius = radius + padding).
@@ -161,6 +161,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Each row's horizontal scroll (1080p px): the focus moves to the third card, then the row slides under it. */
     private final Spring[] rowShift = new Spring[MAX_ROWS];
     private final Rows rowsData;
+    private final NowPlaying nowPlaying;
+    private String nowKey = "";
     private int rowIndex, rowCol;
     private boolean rowsDirty;
     /** How far the home screen has scrolled down (1920-wide px): 0 on the hero and the apps. */
@@ -466,6 +468,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         data = HomeData.get(a);
         recs = Recs.get(a);
         rowsData = Rows.get(a);
+        nowPlaying = NowPlaying.get(a);
         click = new Click(a);
         shelfVisible = Math.min(HomeApps.shelfVisible(a), (int) APPS_VISIBLE);
         ui = a.getSharedPreferences("home-ui", Context.MODE_PRIVATE);
@@ -543,6 +546,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         data.addListener(this);
         recs.addListener(this);
         rowsData.addListener(this);
+        nowPlaying.addListener(this);
         data.refreshIfStale();
         recs.refreshIfStale();
         rowsData.refreshIfStale();
@@ -584,6 +588,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         data.removeListener(this);
         recs.removeListener(this);
         rowsData.removeListener(this);
+        nowPlaying.removeListener(this);
         if (tvInputs != null) tvInputs.unregisterCallback(inputCallback);
     }
 
@@ -654,6 +659,33 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     @Override public void onRecs() {
         wake();
         updatePicks();
+    }
+
+    /** The track changed, or it was paused or played: the hero's first slide follows (only when something changed). */
+    @Override public void onNowPlaying() {
+        String key = nowPlaying.active() ? nowPlaying.title + "|" + nowPlaying.artist + "|" + nowPlaying.playing + "|" + nowPlaying.artFile : "";
+        if (key.equals(nowKey)) return;
+        nowKey = key;
+        updatePicks();
+        heroDirty = true;
+        invalidateAll();
+    }
+
+    /** What's playing as the hero's first slide: its cover over its own blur; OK opens the full-screen player. */
+    private Recs.Pick nowPick() {
+        NowPlaying n = nowPlaying;
+        if (!n.active()) return null;
+        Recs.Pick p = new Recs.Pick();
+        p.kind = "nowplaying";
+        p.id = (n.title + n.artist).hashCode();
+        p.title = n.title;
+        p.meta = n.album.isEmpty() || n.album.equals(n.title) ? n.artist : n.artist + " · " + n.album;
+        p.overview = "";
+        p.pkg = n.pkg;
+        p.app = n.pkg != null && n.pkg.startsWith("com.spotify") ? "spotify" : null;
+        p.backdrop = n.artFile != null ? n.artFile.getPath() : null;
+        p.detailed = true;
+        return p;
     }
 
     /** New lists, or a card's image is ready. */
@@ -2848,6 +2880,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             r = rowRects[rowIndex][rowCol];
         } else if (zone == Z_CARDS) {
             Recs.Pick p = cardIndex < cards.size() ? cards.get(cardIndex) : null;
+            if (p != null && "nowplaying".equals(p.kind)) {
+                click.open();
+                NowPlayingActivity.open(getContext());
+                return;
+            }
             if (p == null || p.pkg == null) return;
             it = HomeApps.app(p.pkg, Recs.serviceName(p), p.link);
             openedPick = p;
@@ -3410,9 +3447,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void updateCards() {
         List<Recs.Pick> list = recs.now(TAB_KIND[tab]);
         Recs.Pick listen = tab == 0 ? rowsData.listenNow() : null;
+        Recs.Pick now = tab == 0 ? nowPick() : null;
+        if (now != null) listen = null;   // music is on: "Now playing" instead of a suggestion
         if (listen != null && list.size() > 1) {   // "For you": the hour's playlist second, among the titles
             list = new ArrayList<>(list);
             list.add(1, listen);
+        }
+        if (now != null) {
+            list = new ArrayList<>(list);
+            list.add(0, now);
         }
         if (list.size() > HERO_MAX) list = new ArrayList<>(list.subList(0, HERO_MAX));
         boolean picksChanged = !samePicks(list, cards);
@@ -3923,7 +3966,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
             after = tmp.right + 14 * k;
         }
-        c.drawText("playlist".equals(p.kind) ? Ui.tr("Listen now") : p.fresh ? Ui.tr("New release") : Ui.tr("Trending"),
+        c.drawText("nowplaying".equals(p.kind) ? (nowPlaying.playing ? Ui.tr("Now playing") : Ui.tr("Paused"))
+                : "playlist".equals(p.kind) ? Ui.tr("Listen now") : p.fresh ? Ui.tr("New release") : Ui.tr("Trending"),
                 after, cy + Ui.halfCap(hEyebrow), hEyebrow);
         fitPaint.set(hTitle);
         if (p.title != null) c.drawText(TextUtils.ellipsize(p.title, fitPaint, H_TITLE_FIT * k, TextUtils.TruncateAt.END).toString(),
@@ -3981,6 +4025,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** "Watch on Netflix", or "Listen on Spotify" for a playlist. */
     private static String heroLabel(Recs.Pick p) {
+        if ("nowplaying".equals(p.kind)) return Ui.tr("Open the player");
         return Ui.trf("playlist".equals(p.kind) ? "Listen on {app}" : "Watch on {app}", "app", Recs.serviceName(p));
     }
 

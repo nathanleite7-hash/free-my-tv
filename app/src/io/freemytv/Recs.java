@@ -286,6 +286,7 @@ final class Recs {
     }
 
     private File imageFile(Pick p) {
+        if (p.backdrop.startsWith("/")) return new File(p.backdrop);   // already on disk (what's playing: NowPlaying)
         return new File(new File(context.getCacheDir(), "recs"), p.backdrop.replaceAll("[^A-Za-z0-9._-]", ""));
     }
 
@@ -847,7 +848,7 @@ final class Recs {
             if (b == null) throw new IOException("unreadable image");
             AppLog.w("backdrop \u201c" + p.title + "\u201d: " + bounds.outWidth + "×" + bounds.outHeight + " → " + Backdrop.W + "×" + Backdrop.H);
             boolean forLight = light;
-            if ("playlist".equals(p.kind)) b = playlistScene(b);
+            if ("playlist".equals(p.kind) || "nowplaying".equals(p.kind)) b = playlistScene(b);
             Backdrop backdrop = Backdrop.make(b, forLight);
             if (forLight != light) return;   // the design changed midway: this one is stale
             synchronized (images) {
