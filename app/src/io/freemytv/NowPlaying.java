@@ -167,7 +167,8 @@ final class NowPlaying {
         // The cover can come after the text (a placeholder first): its address or its pixels are part of the key.
         String uri = md == null ? null : md.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI);
         Bitmap bmp = md == null ? null : md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
-        String key = title + "|" + artist + "|" + album + "|" + uri + "|" + (bmp == null ? 0 : bmp.getGenerationId() + "x" + bmp.getWidth());
+        // Not the bitmap's identity: Spotify hands over a new copy with every update (each would be saved again).
+        String key = title + "|" + artist + "|" + album + "|" + uri + "|" + (bmp == null ? 0 : bmp.getWidth() + "x" + bmp.getHeight());
         if (md != null && !key.equals(artFor)) {
             artFor = key;
             loadArt(md, key);

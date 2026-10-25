@@ -2616,6 +2616,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** Like the prototype: on the hero, the next title comes by itself every 7 s (any key starts the wait over). */
     private static final long HERO_AUTO_MS = 7000;
+    private int heroWaits;
     private final Runnable heroAuto = new Runnable() {
         @Override public void run() {
             if (!running) return;
@@ -2623,14 +2624,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (sheetOpen || (zone != Z_CARDS && zone != Z_TOP) || cards.size() < 2 || !motionOn()) return;
             int next = (cardIndex + 1) % cards.size();
             Backdrop b = recs.backdrop(cards.get(next));
-            if (b == null) {   // its photo isn't ready yet: a little later
+            if (b == null && heroWaits++ < 3) {   // its photo isn't ready yet: a little later (not forever)
                 handler.removeCallbacks(this);
                 handler.postDelayed(this, 1000);
                 return;
             }
+            heroWaits = 0;
             cardIndex = next;
             layoutHeroButton();
-            showBackdrop(b);
+            if (b != null) showBackdrop(b);
             recs.backdrop(cards.get((next + 1) % cards.size()));   // the one after, built ahead
             heroDirty = true;
             spoken.focusMoved();
