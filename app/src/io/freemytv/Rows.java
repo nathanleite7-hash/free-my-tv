@@ -40,12 +40,15 @@ import java.util.concurrent.Executors;
  */
 final class Rows {
     static final class Row {
-        final String title;
+        final String title, subtitle;   // subtitle: the small text beside the title ("Top 10" + "movies on Netflix today")
         final List<Recs.Pick> items;
+        final boolean ranked;            // a Top 10: big numbers beside the cards
 
-        Row(String title, List<Recs.Pick> items) {
+        Row(String title, String subtitle, List<Recs.Pick> items, boolean ranked) {
             this.title = title;
+            this.subtitle = subtitle;
             this.items = items;
+            this.ranked = ranked;
         }
     }
 
@@ -64,7 +67,7 @@ final class Rows {
 
     static final int PER_ROW = 20;
     private static final long EVERY = 6 * 3600_000L, TOP10_EVERY = 24 * 3600_000L;
-    private static final int CACHE_VERSION = 3, CARDS = 36, FILES = 160;
+    private static final int CACHE_VERSION = 5, CARDS = 36, FILES = 160;
     private static final int CARD_W = 480, CARD_H = 270;
     private static final String IMAGES = "https://image.tmdb.org/t/p/w780";
     private static final String TOP10 = "https://www.netflix.com/tudum/top10/data/all-weeks-countries.tsv";
@@ -161,8 +164,8 @@ final class Rows {
         if (netflixId >= 0) {
             String[] nf = services.get(netflixId);
             List<Recs.Pick>[] top = top10(recs, lang, nf, movieGenres, tvGenres);
-            add(out, seen, Ui.tr("Top 10 movies on Netflix today"), top[0]);
-            add(out, seen, Ui.tr("Top 10 shows on Netflix today"), top[1]);
+            add(out, seen, new Row(Ui.tr("Top 10"), Ui.tr("movies on Netflix today"), top[0], true));
+            add(out, seen, new Row(Ui.tr("Top 10"), Ui.tr("shows on Netflix today"), top[1], true));
             add(out, seen, Ui.tr("Popular movies on Netflix"), discover(recs, "movie", netflixId, nf, lang, movieGenres, PER_ROW));
             add(out, seen, Ui.tr("Popular shows on Netflix"), discover(recs, "tv", netflixId, nf, lang, tvGenres, PER_ROW));
             add(out, seen, Ui.tr("New on Netflix"), fresh(recs, netflixId, nf, lang, movieGenres, tvGenres));
@@ -189,9 +192,16 @@ final class Rows {
     }
 
     private static void add(List<Row> out, Set<String> seen, String title, List<Recs.Pick> items) {
+        add(out, seen, new Row(title, "", items, false));
+    }
+
+    private static void add(List<Row> out, Set<String> seen, Row row) {
         List<Recs.Pick> kept = new ArrayList<>();
-        for (Recs.Pick p : items) if (seen.add(Recs.key(p))) kept.add(p);
-        if (kept.size() >= 3) out.add(new Row(title, kept));
+        for (Recs.Pick p : row.items) {
+            boolean first = seen.add(Recs.key(p));
+            if (first || row.ranked) kept.add(p);   // a Top 10 keeps all ten (its numbers are the ranks)
+        }
+        if (kept.size() >= 3) out.add(new Row(row.title, row.subtitle, kept, row.ranked));
     }
 
     private static Map<Integer, String> genres(Recs recs, String kind, String lang) throws Exception {
@@ -260,7 +270,7 @@ final class Rows {
         p.pkg = s[2];
         p.detailed = true;
         List<String> parts = new ArrayList<>();
-        if (rank != null) parts.add(rank);
+        if (rank != null && !rank.isEmpty()) parts.add(rank);
         parts.add(kind.equals("movie") ? Ui.tr("Movie") : Ui.tr("Series"));
         String genre = g != null && g.length() > 0 ? genres.get(g.optInt(0)) : null;
         if (genre != null) parts.add(genre);
@@ -305,8 +315,9 @@ final class Rows {
                     }
                     for (int j = 0; j < found.length() && j < 3; j++) {
                         Recs.Pick p = pick(best != null ? best : found.getJSONObject(j), kind, nf,
-                                c == 0 ? movieGenres : tvGenres, Ui.trf("#{n} on Netflix", "n", i + 1));
+                                c == 0 ? movieGenres : tvGenres, "");
                         if (p != null) {
+                            p.rank = i + 1;   // Tudum's place, even when a title before it wasn't found
                             out[c].add(p);
                             break;
                         }
@@ -455,9 +466,9 @@ final class Rows {
             for (Recs.Pick p : r.items) {
                 items.put(new JSONObject().put("id", p.id).put("kind", p.kind).put("title", p.title)
                         .put("backdrop", p.backdrop).put("meta", p.meta).put("overview", p.overview)
-                        .put("app", p.app).put("pkg", p.pkg));
+                        .put("app", p.app).put("pkg", p.pkg).put("rank", p.rank));
             }
-            a.put(new JSONObject().put("title", r.title).put("items", items));
+            a.put(new JSONObject().put("title", r.title).put("subtitle", r.subtitle).put("ranked", r.ranked).put("items", items));
         }
         return a;
     }
@@ -481,10 +492,11 @@ final class Rows {
                 p.overview = o.optString("overview");
                 p.app = o.optString("app");
                 p.pkg = o.optString("pkg");
+                p.rank = o.optInt("rank");
                 p.detailed = true;
                 items.add(p);
             }
-            out.add(new Row(r.optString("title"), items));
+            out.add(new Row(r.optString("title"), r.optString("subtitle"), items, r.optBoolean("ranked")));
         }
         return out;
     }

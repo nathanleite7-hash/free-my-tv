@@ -30,7 +30,7 @@ final class Recent {
             o.put("id", p.id);
             o.put("kind", p.kind);
             o.put("title", p.title);
-            o.put("meta", p.meta);
+            o.put("meta", p.baseMeta != null ? p.baseMeta : p.meta);
             o.put("app", p.app);
             o.put("pkg", p.pkg);
             o.put("link", p.link);
@@ -77,6 +77,7 @@ final class Recent {
             p.recentApp = o.optBoolean("isApp");
             String ago = ago(o.optLong("at"));
             String meta = o.optString("meta");
+            p.baseMeta = meta;
             p.meta = p.recentApp ? Ui.trf("Opened {ago}", "ago", ago) : meta.isEmpty() ? ago : ago + " · " + meta;
             out.add(p);
         }

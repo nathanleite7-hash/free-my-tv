@@ -50,6 +50,8 @@ final class Recs {
         boolean detailed;
         java.io.File photo;     // one of your own photos (Photos): no title, no caption
         boolean recentApp;      // Recent: an app opened from the shelf, not a title
+        String baseMeta;        // Recent: the meta without "2 h ago"
+        int rank;               // Rows: its place in a Top 10 (0: none)
     }
 
     interface Listener { void onRecs(); }

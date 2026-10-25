@@ -142,7 +142,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** The rows under the apps ("Recently watched", then Rows'), only the ones with something in them. */
     private static final int MAX_ROWS = 8, MAX_ITEMS = Rows.PER_ROW;
     private final List<List<Recs.Pick>> rowItems = new ArrayList<>();
-    private final List<String> rowTitles = new ArrayList<>();
+    private final List<String> rowTitles = new ArrayList<>(), rowSubtitles = new ArrayList<>();
+    private final List<Boolean> rowRanked = new ArrayList<>();
+    /** Top 10 rows: the number (its column), then a smaller card overlapping it by 12 px, as in the prototype. */
+    private static final float RANK_NUM_W = 150, RANK_CARD_W = 380, RANK_CARD_H = 214, RANK_SIZE = 230;
+    private Paint rankPaint, rowSubPaint;
     private final Spring[][] rowFocus = new Spring[MAX_ROWS][MAX_ITEMS];
     private final RectF[][] rowRects = new RectF[MAX_ROWS][MAX_ITEMS];
     /** Each row's horizontal scroll (1080p px): the focus moves to the third card, then the row slides under it. */
@@ -162,6 +166,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final Spring tiltX = new Spring(0.55f, 0.62f, 0), tiltY = new Spring(0.55f, 0.62f, 0);
     private final Paint specPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private LinearGradient specTile, specCard;
+    private float specCardH;
     private int lastDx, lastDy;
     // The focused app's scene (Disney+'s franchise tiles): it comes in after a short pause, then a slow zoom settles.
     private static final long SCENE_DELAY_MS = 280, SCENE_IN_MS = 450, SCENE_ZOOM_MS = 3600;
@@ -744,6 +749,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         barScrim = new LinearGradient(0, 0, 0, BAR_SCRIM_H * k, new int[] {0xFF000000, 0xFF000000, 0xE6000000, 0x00000000},
                 new float[] {0, 0.3f, 0.6f, 1}, Shader.TileMode.CLAMP);
         appsTitle = Ui.text(Ui.bold, 30 * k, 0xFFFFFFFF);
+        rankPaint = Ui.numbers(Ui.displayHeavy, RANK_SIZE * k, 0x29FFFFFF);
+        rankPaint.setLetterSpacing(-0.06f);
+        rowSubPaint = Ui.text(Ui.medium, 22 * k, 0x8CEBEBF5);
         rowCardTitle = Ui.text(Ui.semibold, 25 * k, 0xF2FFFFFF);
         rowCardTitle.setLetterSpacing(-0.01f);
         rowCardMeta = Ui.text(Ui.medium, 20 * k, 0x9EFFFFFF);
@@ -2058,7 +2066,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (int r = 0; r < MAX_ROWS; r++) rowsChanged |= aim(rowFocus[r], !sheetOpen && zone == Z_ROWS && rowIndex == r ? rowCol : -1, snap);
         if (zone == Z_ROWS && rowIndex < rowItems.size()) {
             int n = rowItems.get(rowIndex).size();
-            float pitch = ROW_CARD_W + ROW_GAP;
+            float pitch = rowPitch(rowIndex);
             rowShift[rowIndex].target = Math.max(0, Math.min(n - 3, rowCol - 2)) * pitch;
             if (snap) rowShift[rowIndex].snap(rowShift[rowIndex].target);
         }
@@ -3153,27 +3161,36 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         layoutHeroButton();
         // The rows never repeat what the hero shows (on the Movies tab, its movies are the hero's: that row goes away).
         List<List<Recs.Pick>> items = new ArrayList<>();
-        List<String> titles = new ArrayList<>();
+        List<String> titles = new ArrayList<>(), subtitles = new ArrayList<>();
+        List<Boolean> ranked = new ArrayList<>();
         List<Recs.Pick> recent = Recent.list(getContext());
         if (!recent.isEmpty()) {
             items.add(recent);
             titles.add(Ui.tr("Recently watched"));
+            subtitles.add("");
+            ranked.add(false);
         }
         for (Rows.Row row : rowsData.rows()) {
             if (items.size() >= MAX_ROWS) break;
-            List<Recs.Pick> l = notIn(row.items, cards);
+            List<Recs.Pick> l = row.ranked ? new ArrayList<>(row.items) : notIn(row.items, cards);   // ranks stay whole
             if (l.size() > MAX_ITEMS) l = new ArrayList<>(l.subList(0, MAX_ITEMS));
             if (l.isEmpty()) continue;
             items.add(l);
             titles.add(row.title);
+            subtitles.add(row.subtitle);
+            ranked.add(row.ranked);
         }
-        boolean rowsChanged = !titles.equals(rowTitles) || items.size() != rowItems.size();
+        boolean rowsChanged = !titles.equals(rowTitles) || !subtitles.equals(rowSubtitles) || items.size() != rowItems.size();
         for (int i = 0; !rowsChanged && i < items.size(); i++) rowsChanged = !sameRecent(items.get(i), rowItems.get(i));
         if (rowsChanged) {
             rowItems.clear();
             rowItems.addAll(items);
             rowTitles.clear();
             rowTitles.addAll(titles);
+            rowSubtitles.clear();
+            rowSubtitles.addAll(subtitles);
+            rowRanked.clear();
+            rowRanked.addAll(ranked);
             if (w > 0) layoutRows();
         }
         if (zone == Z_ROWS && rowIndex >= rowItems.size()) rowIndex = Math.max(0, rowItems.size() - 1);
@@ -3249,12 +3266,23 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     /** The cards' places on the page, each row shifted by its scroll. */
+    private boolean ranked(int r) {
+        return r < rowRanked.size() && rowRanked.get(r);
+    }
+
+    private float rowPitch(int r) {
+        return ranked(r) ? RANK_NUM_W + RANK_CARD_W - 12 + ROW_GAP : ROW_CARD_W + ROW_GAP;
+    }
+
     private void positionRows() {
         for (int r = 0; r < MAX_ROWS; r++) {
-            float top = (ROW0_TOP + slot(r) * ROW_STEP) * k, shift = rowShift[r].value;
+            float top = (ROW0_TOP + slot(r) * ROW_STEP) * k, shift = rowShift[r].value, pitch = rowPitch(r);
+            boolean rank = ranked(r);
+            float cw = rank ? RANK_CARD_W : ROW_CARD_W, ch = rank ? RANK_CARD_H : ROW_CARD_H;
+            float dx = rank ? RANK_NUM_W - 12 : 0, dy = rank ? ROW_CARD_H - RANK_CARD_H : 0;
             for (int i = 0; i < MAX_ITEMS; i++) {
-                float x = (MARGIN + i * (ROW_CARD_W + ROW_GAP) - shift) * k;
-                rowRects[r][i].set(x, top, x + ROW_CARD_W * k, top + ROW_CARD_H * k);
+                float x = (MARGIN + i * pitch + dx - shift) * k;
+                rowRects[r][i].set(x, top + dy * k, x + cw * k, top + (dy + ch) * k);
                 if (rowShift[r].settled()) snap(rowRects[r][i]);
             }
         }
@@ -3271,8 +3299,24 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             List<Recs.Pick> list = rowList(r);
             float titleY = (ROW0_TITLE + slot(r) * ROW_STEP) * k;
             if (list.isEmpty() || titleY - 60 * k > page + h || titleY + (ROW_STEP - 40) * k < page) continue;
-            String title = rowTitles.get(r);
+            String title = rowTitles.get(r), sub = rowSubtitles.get(r);
             c.drawText(title, MARGIN * k - Ui.leftBearing(rowTitlePaint, title), titleY, rowTitlePaint);
+            if (!sub.isEmpty()) c.drawText(sub, MARGIN * k + rowTitlePaint.measureText(title) + 14 * k, titleY, rowSubPaint);
+            if (ranked(r)) {
+                // The numbers first: the cards cover their right edge.
+                for (int i = 0; i < list.size(); i++) {
+                    RectF b = rowRects[r][i];
+                    if (b.right < -40 * k || b.left - RANK_NUM_W * k > w + 40 * k) continue;
+                    float f = Ui.clamp(rowFocus[r][i].value);
+                    rankPaint.setColor(blend(0x29FFFFFF, 0xEBFFFFFF, f));
+                    String n = String.valueOf(list.get(i).rank > 0 ? list.get(i).rank : i + 1);
+                    // "10" is narrowed to the number's column, so it doesn't reach under the card before it.
+                    float room = (RANK_NUM_W + 4) * k, nw = rankPaint.measureText(n);
+                    rankPaint.setTextScaleX(nw > room ? room / nw : 1);
+                    c.drawText(n, b.left + 12 * k - rankPaint.measureText(n), b.bottom, rankPaint);
+                    rankPaint.setTextScaleX(1);
+                }
+            }
             int top = -1;
             for (int i = 0; i < list.size(); i++) if (rowFocus[r][i].value > 0.02f && (top < 0 || rowFocus[r][i].value > rowFocus[r][top].value)) top = i;
             for (int i = 0; i < list.size(); i++) {
@@ -3356,7 +3400,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             rim.setShader(null);
             rim.setColor(Ui.alpha(0xFFFFFFFF, 0.85f * f));
             c.drawRoundRect(tmp, r0 * s - inset, r0 * s - inset, rim);
-            if (specCard == null) specCard = spec(bw, bh);
+            if (specCard == null || specCardH != bh) {
+                specCard = spec(bw, bh);
+                specCardH = bh;
+            }
             drawSpec(c, specCard, cx, cy, s, bw, bh, r0, f);
         }
         if (tilted) c.restore();
