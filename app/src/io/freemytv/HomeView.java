@@ -702,7 +702,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         p.overview = "";
         p.pkg = n.pkg;
         p.app = n.pkg != null && n.pkg.startsWith("com.spotify") ? "spotify" : null;
-        p.backdrop = n.artFile != null ? n.artFile.getPath() : null;
+        p.backdrop = n.artFile != null ? "file:" + n.artFile.getPath() : null;
         p.detailed = true;
         return p;
     }
@@ -2977,6 +2977,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // MARK: - Holding OK: All Apps puts the app on the shelf or takes it off; on the shelf, the app is lifted to move
 
     private void hold() {
+        if (!sheetOpen && zone == Z_ROWS && rowIndex < rowTitles.size() && rowTitles.get(rowIndex).equals(Ui.tr("Recently watched"))) {
+            // Holding OK on something you watched takes it out of the row.
+            String title = rowCol < rowList(rowIndex).size() ? rowList(rowIndex).get(rowCol).title : "";
+            Recent.remove(getContext(), rowCol);
+            click.back();
+            showToast(Ui.trf("“{title}” left Recently watched.", "title", title));
+            updatePicks();
+            retarget(false);
+            return;
+        }
         if (sheetOpen) toggleShelf(); else startReorder();
     }
 

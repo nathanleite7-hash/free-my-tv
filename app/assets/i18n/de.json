@@ -25,6 +25,7 @@
  "Cancel": "Abbrechen",
  "City": "Stadt",
  "Clear": "Sonnig",
+ "Clear Recently watched": "Zuletzt gesehen leeren",
  "Cloudy": "Bewölkt",
  "COMPARISON": "VERGLEICH",
  "Connecting…": "Verbindung wird hergestellt…",
@@ -188,6 +189,7 @@
  "quotes|{ago}": "{ago}",
  "Rain": "Regen",
  "Recently watched": "Zuletzt gesehen",
+ "Recently watched is empty.": "Zuletzt gesehen ist leer.",
  "RECOMMENDATIONS": "EMPFEHLUNGEN",
  "Remote Buttons": "Fernbedienungstasten",
  "Remove": "Entfernen",
@@ -308,6 +310,7 @@
  "{n} ms": "{n} ms",
  "{style} · Playlist": "{style} · Playlist",
  "{time} left": "noch {time}",
+ "“{title}” left Recently watched.": "„{title}“ ist aus Zuletzt gesehen entfernt.",
  "← → change the brightness. The photos dim, the clock stays easy to read.": "← → ändern die Helligkeit. Die Fotos werden dunkler, die Uhr bleibt gut lesbar.",
  "← → to move · OK to drop · Back to cancel": "← → verschieben · OK ablegen · Zurück abbrechen"
 }

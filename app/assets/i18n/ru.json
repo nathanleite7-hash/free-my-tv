@@ -25,6 +25,7 @@
  "Cancel": "Отмена",
  "City": "Город",
  "Clear": "Ясно",
+ "Clear Recently watched": "Очистить недавние",
  "Cloudy": "Облачно",
  "COMPARISON": "СРАВНЕНИЕ",
  "Connecting…": "Подключение…",
@@ -188,6 +189,7 @@
  "quotes|{ago}": "{ago}",
  "Rain": "Дождь",
  "Recently watched": "Недавно просмотренные",
+ "Recently watched is empty.": "Список недавних пуст.",
  "RECOMMENDATIONS": "РЕКОМЕНДАЦИИ",
  "Remote Buttons": "Кнопки пульта",
  "Remove": "Удалить",
@@ -308,6 +310,7 @@
  "{n} ms": "{n} мс",
  "{style} · Playlist": "{style} · Плейлист",
  "{time} left": "осталось {time}",
+ "“{title}” left Recently watched.": "«{title}» убрано из недавних.",
  "← → change the brightness. The photos dim, the clock stays easy to read.": "← → меняют яркость. Фото темнеют, часы остаются читаемыми.",
  "← → to move · OK to drop · Back to cancel": "← → — переместить · OK — оставить · Назад — отмена"
 }

@@ -286,7 +286,7 @@ final class Recs {
     }
 
     private File imageFile(Pick p) {
-        if (p.backdrop.startsWith("/")) return new File(p.backdrop);   // already on disk (what's playing: NowPlaying)
+        if (p.backdrop.startsWith("file:")) return new File(p.backdrop.substring(5));   // already on disk (NowPlaying's cover)
         return new File(new File(context.getCacheDir(), "recs"), p.backdrop.replaceAll("[^A-Za-z0-9._-]", ""));
     }
 

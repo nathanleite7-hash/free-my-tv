@@ -92,6 +92,29 @@ final class Recent {
         return Ui.plural("plural|one:{n} day ago|other:{n} days ago", minutes / 1440);
     }
 
+    /** Takes the i-th (newest first) out. */
+    static synchronized void remove(Context c, int index) {
+        JSONArray old = read(c), next = new JSONArray();
+        for (int i = 0; i < old.length(); i++) if (i != index) next.put(old.opt(i));
+        write(c, next);
+    }
+
+    /** Empties it. */
+    static synchronized void clear(Context c) {
+        write(c, new JSONArray());
+    }
+
+    private static void write(Context c, JSONArray list) {
+        try {
+            File tmp = new File(c.getFilesDir(), FILE + ".tmp");
+            java.nio.file.Files.write(tmp.toPath(), list.toString().getBytes(StandardCharsets.UTF_8));
+            //noinspection ResultOfMethodCallIgnored
+            tmp.renameTo(new File(c.getFilesDir(), FILE));
+        } catch (java.io.IOException e) {
+            AppLog.w("recent: " + e.getMessage());
+        }
+    }
+
     private static synchronized void put(Context c, JSONObject item) {
         JSONArray old = read(c), next = new JSONArray();
         next.put(item);

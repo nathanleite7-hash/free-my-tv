@@ -124,7 +124,19 @@ public class SettingsActivity extends Activity {
         return super.dispatchKeyEvent(event);
     }
 
+    private NowPlayingActivity.NowPlayingView musicPreview;
+
+    /** As the real screensaver: the music while it plays, else the photos. */
     void showPreview() {
+        NowPlaying np = NowPlaying.get(this);
+        np.prime();
+        if (np.active() && np.playing) {
+            musicPreview = new NowPlayingActivity.NowPlayingView(this, null, true);
+            setContentView(musicPreview);
+            musicPreview.start();
+            preview = new DreamView(this);   // marks the preview as open (keys close it); not shown
+            return;
+        }
         preview = new DreamView(this);
         setContentView(preview);
         preview.start();
@@ -132,6 +144,10 @@ public class SettingsActivity extends Activity {
 
     private void closePreview() {
         if (preview == null) return;
+        if (musicPreview != null) {
+            musicPreview.stop();
+            musicPreview = null;
+        }
         preview.stop();
         preview = null;
         setContentView(view);
@@ -804,6 +820,7 @@ public class SettingsActivity extends Activity {
             l.add("Ethereum");
             l.add("Solana");
             if (dollar()) l.add(Ui.tr("Dollar"));
+            l.add(Ui.tr("Clear Recently watched"));
             return l.toArray(new String[0]);
         }
 
@@ -825,7 +842,8 @@ public class SettingsActivity extends Activity {
             v[FORECAST_ROW] = Prefs.forecast().equals("days") ? Ui.tr("Next days") : Ui.tr("Next hours");
             v[QUOTES_ROW] = onOff(Prefs.quotes());
             // No quotes widget, nowhere to show prices: the coins read as off (and stay locked) until it is back on.
-            for (int i = COIN_ROWS; i < v.length; i++) v[i] = onOff(Prefs.quotes() && Prefs.coin(i - COIN_ROWS));
+            for (int i = COIN_ROWS; i < v.length - 1; i++) v[i] = onOff(Prefs.quotes() && Prefs.coin(i - COIN_ROWS));
+            v[v.length - 1] = "";
             return v;
         }
 
@@ -869,7 +887,7 @@ public class SettingsActivity extends Activity {
                 whyScroll = pickScroll;
                 for (int r = 0; r < n; r++) {
                     String need = need(r);
-                    whyRows[r] = screen == HOME_SETTINGS && pickScroll + r >= COIN_ROWS && !Prefs.quotes()
+                    whyRows[r] = screen == HOME_SETTINGS && pickScroll + r >= COIN_ROWS && pickScroll + r < settingLabels().length - 1 && !Prefs.quotes()
                             ? Ui.tr("Turn on the Quotes widget to pick its coins.")
                             : need == null ? null : Capabilities.missing(getContext(), need);
                 }
@@ -1100,6 +1118,7 @@ public class SettingsActivity extends Activity {
                     return;
                 case QUOTES_ROW: Prefs.setQuotes(!Prefs.quotes()); break;
                 default:
+                    if (row == settingLabels().length - 1) return;   // Clear Recently watched: OK only
                     if (!Prefs.quotes()) return;
                     Prefs.setCoin(row - COIN_ROWS, !Prefs.coin(row - COIN_ROWS));
                     break;
@@ -1621,6 +1640,10 @@ public class SettingsActivity extends Activity {
                 openPicker(PICK_LANGUAGE);
             } else if (screen == HOME_SETTINGS && pickScroll + focus == CITY_ROW) {
                 askCity();
+                return;
+            } else if (screen == HOME_SETTINGS && pickScroll + focus == settingLabels().length - 1) {
+                Recent.clear(c);
+                Toast.makeText(c, Ui.tr("Recently watched is empty."), Toast.LENGTH_SHORT).show();
                 return;
             } else if (screen == HOME_SETTINGS && pickScroll + focus == PHOTOS_ROW) {
                 askRemovePhotos();

@@ -25,6 +25,7 @@
  "Cancel": "Cancelar",
  "City": "Cidade",
  "Clear": "Céu limpo",
+ "Clear Recently watched": "Limpar Vistos recentemente",
  "Cloudy": "Nublado",
  "COMPARISON": "COMPARAÇÃO",
  "Connecting…": "Conectando…",
@@ -188,6 +189,7 @@
  "quotes|{ago}": "de {ago}",
  "Rain": "Chuva",
  "Recently watched": "Vistos recentemente",
+ "Recently watched is empty.": "Vistos recentemente está vazio.",
  "RECOMMENDATIONS": "RECOMENDAÇÕES",
  "Remote Buttons": "Botões do Controle",
  "Remove": "Remover",
@@ -308,6 +310,7 @@
  "{n} ms": "{n} ms",
  "{style} · Playlist": "{style} · Playlist",
  "{time} left": "faltam {time}",
+ "“{title}” left Recently watched.": "“{title}” saiu de Vistos recentemente.",
  "← → change the brightness. The photos dim, the clock stays easy to read.": "← → mudam o brilho. As fotos escurecem, o relógio continua fácil de ler.",
  "← → to move · OK to drop · Back to cancel": "← → para mover · OK para soltar · Voltar para cancelar"
 }
