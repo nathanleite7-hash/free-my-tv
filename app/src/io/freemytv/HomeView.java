@@ -150,6 +150,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * side. Each number takes the width it needs ("1" narrow, "10" wide).
      */
     private static final float RANK_CARD_W = 162, RANK_CARD_H = 243, RANK_SIZE = 334, RANK_OVERLAP = 44;
+    /** Spotify's playlists: square covers, larger than the cards (Apple Music's shelf). */
+    private static final float SQUARE = 300;
     private Paint rankPaint, rankFill, rowSubPaint;
     /** Where each item starts in its row (1080p px, before the row's scroll). */
     private final float[][] rowX = new float[MAX_ROWS][MAX_ITEMS];
@@ -545,6 +547,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         Photos.importInbox(getContext(), ownReady);   // photos a computer just sent
         if (tvInputs != null) tvInputs.registerCallback(inputCallback, handler);
         handler.postDelayed(tick, 15_000);
+        handler.removeCallbacks(heroAuto);
+        handler.postDelayed(heroAuto, HERO_AUTO_MS);
         checkNotices();
         if (!again) reload();
         updatePalette();
@@ -573,6 +577,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         okHeld = holdArmed = false;
         Choreographer.getInstance().removeFrameCallback(this);
         handler.removeCallbacks(tick);
+        handler.removeCallbacks(heroAuto);
         handler.removeCallbacks(reloadSoon);
         data.removeListener(this);
         recs.removeListener(this);
@@ -673,7 +678,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         measure(platter, width, Math.round(320 * kk));
         measure(tiles, width, Math.round(320 * kk));
         measure(rowsLayer, width, height);   // the screen: the rows scroll inside it (drawRows)
-        measure(drawerLayer, width, Math.round(600 * kk));
+        measure(drawerLayer, width, height);   // the screen: the V1.6 panel slides in at the right, the older drawer rises
         measure(sheetLayer, width, height);
         measure(toastLayer, Math.round(1000 * kk), Math.round(220 * kk));
         setMeasuredDimension(width, height);
@@ -692,7 +697,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         place(platter, 0, Math.round(750 * kk));
         place(tiles, 0, Math.round(840 * kk));
         place(rowsLayer, 0, 0);
-        place(drawerLayer, 0, Math.round(470 * kk));
+        place(drawerLayer, 0, 0);
         sheetLayer.layout(0, 0, width, height);
         sheetLayer.setPivotX(width / 2f);
         sheetLayer.setPivotY(height / 2f);
@@ -924,7 +929,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float d = drawer.value, dc = Ui.clamp(d), s = Ui.clamp(sheet.value);
         float home = 1 - s, top = home * (1 - smoothstep(0, 0.32f, dc));
         float shift = SHIFT * k;
-        float lift = -d * shift, page = lift - scrollY.value * k;
+        boolean panel = picksOn();   // V1.6: a panel at the right over the page, which stays where it is
+        float lift = panel ? 0 : -d * shift, page = lift - scrollY.value * k;
         show(heroLayer, top * (1 - smoothstep(60, 360, scrollY.value)), page);
         show(status, top, lift);
         if (realBlur && Math.abs(scrimNow() - scrimDrawn) > 0.002f) invalidate();
@@ -935,9 +941,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             rowsPage = scrollY.value;
             rowsLayer.invalidate();
         }
-        float da = home * smoothstep(0.1f, 0.6f, dc);
-        drawerLayer.setTranslationY((1 - d) * shift);
+        float da = home * (panel ? smoothstep(0, 0.25f, dc) : smoothstep(0.1f, 0.6f, dc));
+        drawerLayer.setTranslationY(panel ? 0 : (1 - d) * shift);
+        drawerLayer.setTranslationX(panel ? (1 - d) * (PANEL_W + 80) * k : 0);
         drawerLayer.setAlpha(da);
+        if (panel && Math.abs(dc - drawerDim) > 0.002f) invalidate();   // the page's dimming follows the panel
         drawerLayer.setVisibility(da > 0.002f ? VISIBLE : INVISIBLE);
         sheetLayer.setVisibility(s > 0.001f || sheetOpen ? VISIBLE : INVISIBLE);
         sheetLayer.setAlpha(s);
@@ -1758,7 +1766,45 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (!same) drawerDirty = true;
     }
 
+    /** V1.6's drawer: a panel at the right (the prototype's): the weather, the hours, the quotes, then the shortcuts. */
+    private static final float PANEL_W = 640, PANEL_TOP = 40, PANEL_PAD = 44, PANEL_R = 44, PANEL_ITEM_H = 84, PANEL_GAP = 14;
+    private final RectF panelRect = new RectF();
+    private float panelGridTop;
+
+    private void layoutPanel() {
+        float right = (1920 - 40) * k, left = right - PANEL_W * k;
+        panelRect.set(left, PANEL_TOP * k, right, (1080 - PANEL_TOP) * k);
+        int n = drawerItems.size(), rows = (n + 1) / 2;
+        float inner = PANEL_W - 2 * PANEL_PAD, cw = (inner - PANEL_GAP) / 2;
+        float bottom = 1080 - PANEL_TOP - PANEL_PAD;
+        float ih = Math.min(PANEL_ITEM_H, (bottom - panelContentBottom() - 48 - (rows - 1) * PANEL_GAP) / Math.max(1, rows));
+        panelGridTop = bottom - rows * ih - (rows - 1) * PANEL_GAP;
+        for (int i = 0; i < n; i++) {
+            float x = 1920 - 40 - PANEL_W + PANEL_PAD + (i % 2) * (cw + PANEL_GAP), y = panelGridTop + (i / 2) * (ih + PANEL_GAP);
+            drawerRects[i].set(x * k, y * k, (x + cw) * k, (y + ih) * k);
+            snap(drawerRects[i]);
+        }
+        for (HomeApps.Item it : drawerItems) {
+            Symbols.warm(getContext(), it.symbol, 30 * k);
+            Symbols.warm(getContext(), it.symbol, 30 * k * 1.04f);
+        }
+        Symbols.warmWeather(getContext(), 32 * k);
+        drawerDirty = true;
+    }
+
+    /** Where the weather and quotes end (1080p px), for the shortcuts under them. */
+    private float panelContentBottom() {
+        float y = PANEL_TOP + PANEL_PAD;
+        if (Prefs.weather()) y += 430;
+        if (Prefs.quotes()) y += 26 + 44 * HomeData.active().length;
+        return y;
+    }
+
     private void layoutDrawer() {
+        if (picksOn()) {
+            layoutPanel();
+            return;
+        }
         int n = drawerItems.size();
         float left = MARGIN * k, right = CONTENT_R * k;
         float gap = 18 * k, groupGap = 56 * k;
@@ -1790,12 +1836,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         drawerDirty = true;
     }
 
+    private boolean drawerFromTop;   // opened from the top bar's dollar/weather/time: closing goes back there
+
     private void openDrawer() {
         if (drawerItems.isEmpty()) return;
+        drawerFromTop = zone == Z_TOP;
         drawerOpen = true;
         drawer.target = 1;
         zone = Z_DRAWER;
-        drawerIndex = shelf.isEmpty() ? 0 : nearest(drawerRects, tileRects[shelfIndex].centerX());
+        layoutDrawer();
+        drawerIndex = picksOn() || shelf.isEmpty() ? 0 : nearest(drawerRects, tileRects[shelfIndex].centerX());
         for (int i = 0; i < drawerFocus.length; i++) drawerFocus[i].snap(i == drawerIndex ? 1 : 0);
         drawerDirty = true;
     }
@@ -1805,7 +1855,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         drawer.target = 0;
         zone = Z_SHELF;
         for (Spring f : drawerFocus) f.snap(0);   // the drawer goes away: its focus doesn't need to animate
-        if (!shelf.isEmpty() && drawerIndex < drawerRects.length) shelfIndex = nearest(tileRects, drawerRects[drawerIndex].centerX());
+        if (drawerFromTop) {
+            zone = Z_TOP;
+            topIndex = GLANCE;
+            return;
+        }
+        if (!picksOn() && !shelf.isEmpty() && drawerIndex < drawerRects.length) shelfIndex = nearest(tileRects, drawerRects[drawerIndex].centerX());
     }
 
     /** Color for the drawer's text and symbols: dark by day, white at night. */
@@ -1832,6 +1887,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private void drawDrawer(Canvas c) {
         if (drawerItems.isEmpty()) return;
+        if (picksOn()) {
+            drawPanel(c);
+            return;
+        }
         rowTitle.setColor(tone(L_DIM, 0xB3FFFFFF));
         cardTitle.setColor(tone(L_DIM, 0xB3FFFFFF));
         cardText.setColor(drawerInk(0.95f));
@@ -1851,6 +1910,124 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (top >= 0) drawDrawerTile(c, top);
         if (Prefs.weather()) drawWeatherCard(c, weatherCard);
         if (Prefs.quotes() && HomeData.active().length > 0) drawQuotesCard(c, quotesCard);
+    }
+
+    private Paint pCity, pTemp, pCond, pDim, pHour, pHourTemp, pCoin, pCode, pPrice, pChange, pHead, pItem, pLine;
+
+    private void panelPaints() {
+        if (pCity != null && pCity.getTextSize() == 26 * k) return;
+        pCity = Ui.text(Ui.semibold, 26 * k, 0xADEBEBF5);
+        pTemp = Ui.numbers(Ui.light, 108 * k, 0xFFFFFFFF);
+        pTemp.setLetterSpacing(-0.05f);
+        pCond = Ui.text(Ui.medium, 28 * k, 0xFFFFFFFF);
+        pDim = Ui.numbers(Ui.regular, 23 * k, 0xADEBEBF5);
+        pHour = Ui.numbers(Ui.medium, 22 * k, 0xADEBEBF5);
+        pHour.setTextAlign(Paint.Align.CENTER);
+        pHourTemp = Ui.numbers(Ui.semibold, 26 * k, 0xFFFFFFFF);
+        pHourTemp.setTextAlign(Paint.Align.CENTER);
+        pCoin = Ui.text(Ui.semibold, 26 * k, 0xFFFFFFFF);
+        pCode = Ui.text(Ui.medium, 18 * k, 0x80EBEBF5);
+        pPrice = Ui.numbers(Ui.semibold, 26 * k, 0xFFFFFFFF);
+        pPrice.setTextAlign(Paint.Align.RIGHT);
+        pChange = Ui.numbers(Ui.semibold, 21 * k, 0xFFFFFFFF);
+        pChange.setTextAlign(Paint.Align.RIGHT);
+        pHead = Ui.text(Ui.bold, 20 * k, 0x80EBEBF5);
+        pHead.setLetterSpacing(0.06f);
+        pItem = Ui.text(Ui.semibold, 23 * k, 0xFFFFFFFF);
+        pLine = new Paint();
+        pLine.setColor(0x1FFFFFFF);
+    }
+
+    /** The prototype's drawer: a dark glass panel; weather, the next hours, the quotes and a grid of shortcuts. */
+    private void drawPanel(Canvas c) {
+        panelPaints();
+        refreshDrawerText();
+        RectF p = panelRect;
+        tmp.set(p);
+        tmp.offset(0, 30 * k);
+        shadow.setColor(0x80000000);
+        shadows.draw(c, tmp, PANEL_R * k, SHADOW_BLUR * k, shadow);
+        fill.setShader(null);
+        fill.setColor(0xF01E1E22);
+        c.drawRoundRect(p, PANEL_R * k, PANEL_R * k, fill);
+        rim.setShader(null);
+        rim.setColor(0x1FFFFFFF);
+        rim.setStrokeWidth(1.5f * k);
+        c.drawRoundRect(p.left + 0.75f * k, p.top + 0.75f * k, p.right - 0.75f * k, p.bottom - 0.75f * k, PANEL_R * k, PANEL_R * k, rim);
+        rim.setStrokeWidth(2.5f * k);
+        float x = p.left + PANEL_PAD * k, right = p.right - PANEL_PAD * k, y = p.top + PANEL_PAD * k;
+        HomeData.Weather wx = textWeather;
+        if (Prefs.weather()) {
+            c.drawText(weatherTitle, x, y + 22 * k, pCity);
+            if (wx != null && !Double.isNaN(wx.temp)) {
+                c.drawText(nowTemp, x - Ui.leftBearing(pTemp, nowTemp), y + 140 * k, pTemp);
+                c.drawText(HomeData.condition(wx.code, wx.isDay), x, y + 190 * k, pCond);
+                c.drawText(panelLine, x, y + 228 * k, pDim);
+                // The next five hours, between two hairlines.
+                float top = y + 262 * k, bottom = top + 150 * k;
+                c.drawRect(x, top, right, top + Math.max(1, k), pLine);
+                c.drawRect(x, bottom, right, bottom + Math.max(1, k), pLine);
+                float cw = (right - x) / 5;
+                for (int i = 0; i < 5 && i < wx.hours.size(); i++) {
+                    float cx = x + cw * (i + 0.5f);
+                    c.drawText(hourText[i], cx, top + 44 * k, pHour);
+                    Symbols.draw(getContext(), c, Symbols.weather(wx.hourCode.get(i), wx.hourDay.get(i)), cx, top + 78 * k, 32 * k, 0xEBFFFFFF);
+                    c.drawText(hourTempText[i], cx, top + 128 * k, pHourTemp);
+                }
+            } else {
+                c.drawText(Ui.tr("No weather data right now."), x, y + 80 * k, pDim);
+            }
+            y += 430 * k;
+        }
+        if (Prefs.quotes()) {
+            y += 26 * k;
+            int[] coins = HomeData.active();
+            for (int j = 0; j < coins.length; j++) {
+                int i = coins[j];
+                float base = y + (30 + 44 * j) * k;
+                String name = HomeData.coinName(i);
+                c.drawText(name, x, base, pCoin);
+                c.drawText(i == 3 ? "USD" : HomeData.COINS[i], x + pCoin.measureText(name) + 10 * k, base, pCode);   // the dollar (priced through USDT)
+                double change = data.changes[i];
+                float px = right;
+                if (!Double.isNaN(change)) {
+                    pChange.setColor(change >= 0 ? UP_COLOR : DOWN_COLOR);
+                    c.drawText(changeText[i], px, base, pChange);
+                    px -= pChange.measureText(changeText[i]) + 12 * k;
+                }
+                c.drawText(priceText[i], px, base, pPrice);
+            }
+        }
+        String head = Ui.tr("Shortcuts").toUpperCase(Ui.locale());
+        c.drawText(head, x, panelGridTop * k - 18 * k, pHead);
+        int top = -1;
+        for (int i = 0; i < drawerItems.size(); i++) if (drawerFocus[i].value > 0.02f && (top < 0 || drawerFocus[i].value > drawerFocus[top].value)) top = i;
+        for (int i = 0; i < drawerItems.size(); i++) if (i != top) drawPanelItem(c, i);
+        if (top >= 0) drawPanelItem(c, top);
+    }
+
+    /** A shortcut: its symbol and name on a faint fill; focused, white with dark ink, a little larger. */
+    private void drawPanelItem(Canvas c, int i) {
+        HomeApps.Item it = drawerItems.get(i);
+        float f = Ui.clamp(drawerFocus[i].value), s = 1 + 0.04f * f;
+        RectF b = drawerRects[i];
+        float cx = b.centerX(), cy = b.centerY();
+        cell.set(cx - b.width() * s / 2, cy - b.height() * s / 2, cx + b.width() * s / 2, cy + b.height() * s / 2);
+        float r = 24 * k * s;
+        fill.setShader(null);
+        fill.setColor(blend(0x12FFFFFF, 0xFFFFFFFF, f));
+        c.drawRoundRect(cell, r, r, fill);
+        boolean off = it.kind == HomeApps.INPUT && !it.connected;
+        int ink = blend(off ? 0x6BFFFFFF : 0xFFFFFFFF, INK, f);
+        float ix = cell.left + 22 * k * s, size = 30 * k * s, sw = Symbols.width(getContext(), it.symbol, size);
+        Symbols.draw(getContext(), c, it.symbol, ix + sw / 2, cy, size, ink);
+        pItem.setColor(ink);
+        pItem.setTextSize(23 * k * s);
+        fitPaint.set(pItem);
+        float room = cell.right - 18 * k - (ix + sw + 16 * k * s);
+        String label = TextUtils.ellipsize(it.label, fitPaint, room, TextUtils.TruncateAt.END).toString();
+        c.drawText(label, ix + sw + 16 * k * s, cy + Ui.halfCap(pItem), pItem);
+        pItem.setTextSize(23 * k);
     }
 
     /** Square drawer button: symbol and name; an input with no device is dimmed. Focused: white, with dark text. */
@@ -1962,6 +2139,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
             sunriseText = Ui.trf("Sunrise {time}", "time", Ui.time(wx.sunrise));
             sunsetText = Ui.trf("Sunset {time}", "time", Ui.time(wx.sunset));
+            panelLine = HomeData.highLow(wx, " · ") + (wx.sunset != 0 ? " · " + sunsetText : "");
         }
         long minute = System.currentTimeMillis() / 60_000;
         if (data.pricesAt != textPricesAt || minute != textMinute || settings) {
@@ -2026,6 +2204,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private final Snapshot weatherSnapshot = new Snapshot(), quotesSnapshot = new Snapshot();
+    private String panelLine = "";
 
     private void drawPrices(Canvas c, RectF r) {
         float x = r.left + 34 * k, right = r.right - 34 * k;
@@ -2371,8 +2550,36 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     // MARK: - Keys: only the arrows, OK and Back (system keys pass through to the system)
 
+    /** Like the prototype: on the hero, the next title comes by itself every 7 s (any key starts the wait over). */
+    private static final long HERO_AUTO_MS = 7000;
+    private final Runnable heroAuto = new Runnable() {
+        @Override public void run() {
+            if (!running) return;
+            handler.postDelayed(this, HERO_AUTO_MS);
+            if (sheetOpen || (zone != Z_CARDS && zone != Z_TOP) || cards.size() < 2 || !motionOn()) return;
+            int next = (cardIndex + 1) % cards.size();
+            Backdrop b = recs.backdrop(cards.get(next));
+            if (b == null) {   // its photo isn't ready yet: a little later
+                handler.removeCallbacks(this);
+                handler.postDelayed(this, 1000);
+                return;
+            }
+            cardIndex = next;
+            layoutHeroButton();
+            showBackdrop(b);
+            recs.backdrop(cards.get((next + 1) % cards.size()));   // the one after, built ahead
+            heroDirty = true;
+            spoken.focusMoved();
+            invalidateAll();
+        }
+    };
+
     boolean onKey(KeyEvent e) {
         wake();
+        if (e.getAction() == KeyEvent.ACTION_DOWN) {
+            handler.removeCallbacks(heroAuto);
+            if (running) handler.postDelayed(heroAuto, HERO_AUTO_MS);
+        }
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
         if (reordering) return reorderKey(e, down);
         int code = e.getKeyCode();
@@ -2444,7 +2651,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         } else {
             return;
         }
-        click.move();
+        click.back();
     }
 
     private void move(int dx, int dy) {
@@ -2515,6 +2722,21 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 break;
             }
             default:
+                if (picksOn()) {   // the panel's grid: two columns; left from the left column closes it (it came from there)
+                    int n = drawerItems.size(), col = drawerIndex % 2;
+                    if (dx < 0 && col == 0) {
+                        closeDrawer();
+                    } else if (dx != 0) {
+                        int next = drawerIndex + dx;
+                        if (next < 0 || next >= n || next / 2 != drawerIndex / 2) return;
+                        drawerIndex = next;
+                    } else {
+                        int next = drawerIndex + 2 * dy;
+                        if (next < 0 || next >= n) return;
+                        drawerIndex = next;
+                    }
+                    break;
+                }
                 if (dx != 0) {
                     int next = Math.max(0, Math.min(drawerItems.size() - 1, drawerIndex + dx));
                     if (next == drawerIndex) return;
@@ -3286,6 +3508,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         return r >= 0 && r < rowItems.size() ? rowItems.get(r) : java.util.Collections.<Recs.Pick>emptyList();
     }
 
+    /** How far row r is below the first (1080p px): a square row is taller. */
+    private float rowOffset(int r) {
+        float y = 0;
+        for (int i = 0; i < r; i++) y += ROW_STEP + (square(i) ? SQUARE - ROW_CARD_H + 30 : 0);
+        return y;
+    }
+
     /** Where row r sits on the page (only rows with something in them are kept). */
     private int slot(int r) {
         return r;
@@ -3300,7 +3529,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private float scrollTarget() {
         if (zone == Z_DRAWER || zone == WIDGETS) return scrollY.target;
         if (zone == Z_SHELF && picksOn()) return APPS_SCROLL;
-        return zone == Z_ROWS ? ROW0_TOP + slot(rowIndex) * ROW_STEP - ROW_SCROLL_PAD : 0;
+        return zone == Z_ROWS ? ROW0_TOP + rowOffset(rowIndex) - ROW_SCROLL_PAD : 0;
     }
 
     /** The background follows the focus: the row card's photo there, the hero's pick everywhere else. */
@@ -3359,10 +3588,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private void positionRows() {
         for (int r = 0; r < MAX_ROWS; r++) {
-            float top = (ROW0_TOP + slot(r) * ROW_STEP) * k, shift = rowShift[r].value;
+            float top = (ROW0_TOP + rowOffset(r)) * k, shift = rowShift[r].value;
             boolean rank = ranked(r);
-            float cw = rank ? RANK_CARD_W : square(r) ? ROW_CARD_H : ROW_CARD_W, ch = rank ? RANK_CARD_H : ROW_CARD_H;
-            float dy = ROW_CARD_H - ch, start = 0;
+            boolean sq = square(r);
+            float cw = rank ? RANK_CARD_W : sq ? SQUARE : ROW_CARD_W, ch = rank ? RANK_CARD_H : sq ? SQUARE : ROW_CARD_H;
+            float dy = sq ? 0 : ROW_CARD_H - ch, start = 0;   // a square cover hangs from the row's top, like Apple Music's
             for (int i = 0; i < MAX_ITEMS; i++) {
                 rowX[r][i] = start;
                 float cardX = rank ? start + rankWidth(r, i) - RANK_OVERLAP : start;
@@ -3384,7 +3614,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         c.translate(0, -page);
         for (int r = 0; r < rowItems.size(); r++) {
             List<Recs.Pick> list = rowList(r);
-            float titleY = (ROW0_TITLE + slot(r) * ROW_STEP) * k;
+            float titleY = (ROW0_TITLE + rowOffset(r)) * k;
             if (list.isEmpty() || titleY - 60 * k > page + h || titleY + (ROW_STEP - 40) * k < page) continue;
             String title = rowTitles.get(r), sub = rowSubtitles.get(r);
             c.drawText(title, MARGIN * k - Ui.leftBearing(rowTitlePaint, title), titleY, rowTitlePaint);
@@ -3426,7 +3656,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void drawRowCard(Canvas c, int r, int i, Recs.Pick p) {
         RectF base = rowRects[r][i];
         float v = rowFocus[r][i].value, f = Ui.clamp(v), s = 1 + 0.08f * v;
-        float bw = base.width(), bh = base.height(), r0 = 20 * k;
+        float bw = base.width(), bh = base.height(), r0 = (square(r) ? 16 : 20) * k;
         float cx = base.centerX(), cy = base.centerY();
         cell.set(cx - bw * s / 2, cy - bh * s / 2, cx + bw * s / 2, cy + bh * s / 2);
         boolean tilted = zone == Z_ROWS && r == rowIndex && i == rowCol && f > 0.01f && tiltBegin(c, cx, cy);
@@ -3884,7 +4114,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         c.drawRoundRect(r.left + 0.75f * k, r.top + 0.75f * k, r.right - 0.75f * k, r.bottom - 0.75f * k, rad, rad, glassRim);
     }
 
+    private float drawerDim;
+
     @Override protected boolean drawChild(Canvas canvas, View child, long time) {
+        if (child == drawerLayer && picksOn()) {
+            // The page darkens under the panel: its text reads against anything behind it.
+            drawerDim = Ui.clamp(drawer.value);
+            if (drawerDim > 0.004f) {
+                fill.setShader(null);
+                fill.setColor(Ui.alpha(0xFF000000, 0.6f * drawerDim * (1 - Ui.clamp(sheet.value))));
+                canvas.drawRect(0, 0, w, h, fill);
+            }
+        }
         if (child == status && barBlur != null && picksOn() && status.getVisibility() == VISIBLE && canvas.isHardwareAccelerated()) {
             drawBarBlur(canvas, time);
         }
@@ -3989,10 +4230,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // Time, weather and the dollar, right to left: one focusable group (OK opens the drawer).
         float glanceRight = right + 22 * k;
         float gf = Ui.clamp(glanceFocus.value);
-        if (gf > 0.01f && !glanceRect.isEmpty()) {
+        int textWas = barText.getColor(), dimWas = barDim.getColor(), labelWas = barLabel.getColor();
+        if (gf > 0.01f && !glanceRect.isEmpty()) {   // focused: a white pill, the text dark (the prototype's)
             fill.setShader(null);
-            fill.setColor(Ui.alpha(0xFFFFFFFF, 0.16f * gf));
+            fill.setColor(Ui.alpha(0xFFFFFFFF, gf));
             c.drawRoundRect(glanceRect, glanceRect.height() / 2, glanceRect.height() / 2, fill);
+            barText.setColor(blend(textWas, INK, gf));
+            barDim.setColor(blend(dimWas, INK, gf));
+            barLabel.setColor(blend(labelWas, 0xA61C1C1E, gf));
         }
         float base = cy + Ui.halfCap(barText);
         float tw = barText.measureText(clockText);
@@ -4003,7 +4248,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             String deg = HomeData.degrees(wx.temp), sym = Symbols.weather(wx.code, wx.isDay);
             float dw = barDim.measureText(deg), size = 30 * k, sw = Symbols.width(getContext(), sym, size);
             c.drawText(deg, right - dw, base, barDim);
-            Symbols.draw(getContext(), c, sym, right - dw - 10 * k - sw / 2, cy, size, 0x9EFFFFFF);
+            Symbols.draw(getContext(), c, sym, right - dw - 10 * k - sw / 2, cy, size, blend(0x9EFFFFFF, INK, gf));
             right -= dw + 10 * k + sw + 24 * k;
             fill.setShader(null);
             fill.setColor(0x2EFFFFFF);
@@ -4031,6 +4276,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             right -= lw + 28 * k;
         }
         glanceRect.set(right + 6 * k, cy - BAR_H / 2 * k + 4 * k, glanceRight, cy + BAR_H / 2 * k - 4 * k);
+        barText.setColor(textWas);
+        barDim.setColor(dimWas);
+        barLabel.setColor(labelWas);
         if (sleepText.isEmpty()) return;
         float sw2 = lQuote.measureText(sleepText), size = lQuote.getTextSize();
         c.drawText(sleepText, right - sw2, cy + Ui.halfCap(lQuote), lQuote);

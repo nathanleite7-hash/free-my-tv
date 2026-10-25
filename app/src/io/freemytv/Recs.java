@@ -67,7 +67,7 @@ final class Recs {
     private static final int ANIMATION = 16;
     private static final long LIST_EVERY = 6 * 3600_000L;
     /** Bump when what is saved for each title changes (the saved list is discarded and fetched again). */
-    private static final int CACHE_VERSION = 6;
+    private static final int CACHE_VERSION = 7;
     private static final int MANHA = 0, TARDE = 1, NOITE = 2;
     /** Service name on TMDB (part of the name, lowercase) → TV app (HomeApps key, package). */
     private static final String[][] SERVICES = {
@@ -514,13 +514,27 @@ final class Recs {
     private static void add(List<Pick> list, JSONObject o, String kind) {
         String backdrop = o.optString("backdrop_path", "");
         if (backdrop.isEmpty() || "null".equals(backdrop)) return;
-        if (Config.HIDE_ANIMATION && animated(o)) return;
+        if (!wanted(o)) return;
         Pick p = new Pick();
         p.id = o.optInt("id");
         p.kind = kind;
         p.title = o.optString(kind.equals("movie") ? "title" : "name");
         p.backdrop = backdrop;
         list.add(p);
+    }
+
+    /** Asian languages: their productions stay out of the hero and the rows (anime, K-dramas, Indian films…). */
+    private static final java.util.Set<String> EASTERN = new java.util.HashSet<>(java.util.Arrays.asList(
+            "ja", "ko", "zh", "cn", "th", "hi", "te", "ta", "ml", "kn", "bn", "mr", "pa", "gu", "id", "vi", "tl", "ms", "ur"));
+    private static final java.util.List<String> EASTERN_COUNTRIES = java.util.Arrays.asList(
+            "JP", "KR", "CN", "TW", "HK", "TH", "IN", "ID", "PH", "VN");
+
+    /** What the picks and rows show: no animation (cartoons, anime) and nothing produced in East or South Asia. */
+    static boolean wanted(JSONObject o) {
+        if (animated(o) || EASTERN.contains(o.optString("original_language"))) return false;
+        JSONArray countries = o.optJSONArray("origin_country");
+        for (int i = 0; countries != null && i < countries.length(); i++) if (EASTERN_COUNTRIES.contains(countries.optString(i))) return false;
+        return true;
     }
 
     private static boolean animated(JSONObject o) {

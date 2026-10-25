@@ -73,10 +73,10 @@ final class Rows {
 
     static final int PER_ROW = 20;
     private static final long EVERY = 6 * 3600_000L, TOP10_EVERY = 24 * 3600_000L;
-    private static final int CACHE_VERSION = 8, CARDS = 36, FILES = 160;
+    private static final int CACHE_VERSION = 9, CARDS = 36, FILES = 160;
     private static final int CARD_W = 480, CARD_H = 270;
     private static final String IMAGES = "https://image.tmdb.org/t/p/w780", POSTERS = "https://image.tmdb.org/t/p/w342";
-    private static final int POSTER_W = 180, POSTER_H = 270, SQUARE = 260;
+    private static final int POSTER_W = 180, POSTER_H = 270, SQUARE = 320;
     private static final String TOP10 = "https://www.netflix.com/tudum/top10/data/all-weeks-countries.tsv";
 
     /** Letters outside the Latin alphabet. */
@@ -266,8 +266,14 @@ final class Rows {
      * rows that mix both. The service is the row's (its title says it).
      */
     private static Recs.Pick pick(JSONObject o, String kind, String[] s, Map<Integer, String> genres, boolean showKind) {
+        return pick(o, kind, s, genres, showKind, true);
+    }
+
+    /** `filter`: false for Netflix's Top 10 and the search, which show what they show. */
+    private static Recs.Pick pick(JSONObject o, String kind, String[] s, Map<Integer, String> genres, boolean showKind, boolean filter) {
         String backdrop = o.optString("backdrop_path", "");
         if (backdrop.isEmpty() || "null".equals(backdrop)) return null;
+        if (filter && !Recs.wanted(o)) return null;   // no anime or cartoons, nothing from East or South Asia
         JSONArray g = o.optJSONArray("genre_ids");
         if (Config.HIDE_ANIMATION) for (int i = 0; g != null && i < g.length(); i++) if (g.optInt(i) == 16) return null;
         Recs.Pick p = new Recs.Pick();
@@ -321,7 +327,7 @@ final class Rows {
                         s = recs.tvService(flat.getJSONObject(j).optString("provider_name"), flat.getJSONObject(j).optInt("provider_id"));
                     }
                     if (s == null) continue;   // not on any of the TV's apps
-                    Recs.Pick p = pick(o, kind, s, kind.equals("movie") ? movieGenres : tvGenres, true);
+                    Recs.Pick p = pick(o, kind, s, kind.equals("movie") ? movieGenres : tvGenres, true, false);
                     if (p != null) out.add(p);
                 }
             } catch (Exception e) {
@@ -333,10 +339,13 @@ final class Rows {
 
     // MARK: - Spotify (its editorial playlists: names and covers from the public oEmbed, no account)
 
+    /** {playlist, style}: house, lo-fi, R&B and pop, taking turns (what's played in this house). */
     private static final String[][] PLAYLISTS = {
-        {"37i9dQZEVXbMXbN3EUUhlg"}, {"37i9dQZF1DX0FOF1IUWK1W"}, {"37i9dQZF1DXdSjVZQzv2tl"}, {"37i9dQZF1DWTkIwO2HDifB"},
-        {"37i9dQZF1DX8mBRYewE6or"}, {"37i9dQZF1DXcBWIGoYBM5M"}, {"37i9dQZEVXbMDoHDwVN2tF"}, {"37i9dQZF1DXbYM3nMM0oPk"},
-        {"37i9dQZF1DX0XUsuxWHRQd"}, {"37i9dQZF1DX4sWSpwq3LiO"},
+        {"37i9dQZF1DX2TRYkJECvfC", "House"}, {"37i9dQZF1DWWQRwui0ExPn", "Lo-fi"}, {"37i9dQZF1DX2UgsUIg75Vg", "R&B"},
+        {"37i9dQZF1DWUa8ZRTfalHk", "Pop"}, {"37i9dQZF1DXa8NOEUWPn9W", "House"}, {"37i9dQZF1DX8Uebhn9wzrS", "Lo-fi"},
+        {"37i9dQZF1DX4SBhb3fqCJd", "R&B"}, {"37i9dQZF1DXcBWIGoYBM5M", "Pop"}, {"37i9dQZF1DX0AMssoUKCz7", "House"},
+        {"37i9dQZF1DWYmmr74INQlb", "R&B"}, {"37i9dQZF1DWTwnEm1IYyoj", "Pop"}, {"37i9dQZF1DX4dyzvuaRJ0n", "Dance"},
+        {"37i9dQZF1DX889U0CL85jj", "Chill"},
     };
 
     private List<Recs.Pick> spotify() {
@@ -363,7 +372,7 @@ final class Rows {
                 p.app = "spotify";
                 p.pkg = pkg;
                 p.link = "spotify:playlist:" + pl[0];
-                p.meta = "";
+                p.meta = pl[1];   // the style: what the cover doesn't say
                 p.detailed = true;
                 if (!p.title.isEmpty() && p.poster.startsWith("https://")) out.add(p);
             } catch (Exception e) {
@@ -415,7 +424,7 @@ final class Rows {
                     }
                     for (int j = 0; j < found.length() && j < 3; j++) {
                         Recs.Pick p = pick(best != null ? best : found.getJSONObject(j), kind, nf,
-                                c == 0 ? movieGenres : tvGenres, false);
+                                c == 0 ? movieGenres : tvGenres, false, false);
                         if (p != null) {
                             p.rank = i + 1;   // Tudum's place, even when a title before it wasn't found
                             out[c].add(p);
