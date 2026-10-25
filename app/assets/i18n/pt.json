@@ -280,6 +280,7 @@
  "photos|None": "Nenhuma",
  "plural|one:Remove {n} photo?|other:Remove {n} photos?": "one:Remover {n} foto?|other:Remover {n} fotos?",
  "plural|one:{n} day ago|other:{n} days ago": "one:há {n} dia|other:há {n} dias",
+ "plural|one:{n} hour|other:{n} hours": "plural|one:{n} hora|other:{n} horas",
  "plural|one:{n} photo|other:{n} photos": "one:{n} foto|other:{n} fotos",
  "plural|one:{n} season|other:{n} seasons": "one:{n} temporada|other:{n} temporadas",
  "prices from {ago}": "cotações de {ago}",

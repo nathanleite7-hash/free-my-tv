@@ -280,6 +280,7 @@
  "photos|None": "Keine",
  "plural|one:Remove {n} photo?|other:Remove {n} photos?": "one:{n} Foto entfernen?|other:{n} Fotos entfernen?",
  "plural|one:{n} day ago|other:{n} days ago": "one:vor {n} Tag|other:vor {n} Tagen",
+ "plural|one:{n} hour|other:{n} hours": "plural|one:{n} Stunde|other:{n} Stunden",
  "plural|one:{n} photo|other:{n} photos": "one:{n} Foto|other:{n} Fotos",
  "plural|one:{n} season|other:{n} seasons": "one:{n} Staffel|other:{n} Staffeln",
  "prices from {ago}": "Kurse von {ago}",

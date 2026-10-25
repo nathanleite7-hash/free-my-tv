@@ -280,6 +280,7 @@
  "photos|None": "Нет",
  "plural|one:Remove {n} photo?|other:Remove {n} photos?": "one:Удалить {n} фото?|few:Удалить {n} фото?|many:Удалить {n} фото?|other:Удалить {n} фото?",
  "plural|one:{n} day ago|other:{n} days ago": "one:{n} день назад|few:{n} дня назад|many:{n} дней назад|other:{n} дня назад",
+ "plural|one:{n} hour|other:{n} hours": "plural|one:{n} час|few:{n} часа|many:{n} часов|other:{n} часа",
  "plural|one:{n} photo|other:{n} photos": "one:{n} фото|few:{n} фото|many:{n} фото|other:{n} фото",
  "plural|one:{n} season|other:{n} seasons": "one:{n} сезон|few:{n} сезона|many:{n} сезонов|other:{n} сезона",
  "prices from {ago}": "котировки за {ago}",
