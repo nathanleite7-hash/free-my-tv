@@ -1,5 +1,7 @@
 # Your settings and signing key stay on your machine
 config.properties
+# A personal build's own assets (Apple's SF Pro and SF Symbols: their license covers Apple platforms only)
+local/
 *.keystore
 *.idsig
 

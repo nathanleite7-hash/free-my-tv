@@ -70,9 +70,11 @@ final class Ui {
 
     /** Inter at an optical size (14 = text, 32 = display) and weight; the system font if the file is missing. */
     private static Typeface font(AssetManager a, int opticalSize, int weight) {
-        if (has(a, FONT)) {
+        // A personal build may carry Apple's SF Pro (local/assets, never in git): it wins over Inter.
+        String file = has(a, SF_FONT) ? SF_FONT : FONT;
+        if (has(a, file)) {
             try {
-                Typeface t = new Typeface.Builder(a, FONT)
+                Typeface t = new Typeface.Builder(a, file)
                         .setFontVariationSettings("'opsz' " + opticalSize + ", 'wght' " + weight).build();
                 if (t != null) return t;
             } catch (RuntimeException ignored) {
@@ -90,7 +92,7 @@ final class Ui {
         }
     }
 
-    private static final String FONT = "fonts/InterVariable.ttf";
+    private static final String FONT = "fonts/InterVariable.ttf", SF_FONT = "fonts/SF-Pro.ttf";
 
     // MARK: - Text in the viewer's language
 
