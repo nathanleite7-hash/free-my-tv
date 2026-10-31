@@ -166,6 +166,19 @@ python3 tools/photos.py <TV IP> beach.jpg hills.jpg Holidays/
 
 They land in the app's own folder on the TV (no permission needed); on Android 11, which keeps adb out of other apps' folders, they go through Free My TV itself. The next time the home screen, the screensaver or Free My TV's settings open, the app imports each one: turned upright, cropped to 16:9, resized for the TV and saved without its GPS and other tags; what was sent is then deleted. The screensaver shows them in the order you sent them, instead of the picks' photos; without a TMDB key, one of them is the home screen's background, a new one every hour. *Home Settings* → *My Photos*: the arrows turn them on or off, OK removes them. Up to 100; JPEG, PNG and WebP, and HEIC on Android 9 and newer.
 
+### Apple's SF Pro and SF Symbols (optional, personal builds)
+
+On a Mac, a build can use Apple's SF Pro and SF Symbols in place of Inter and Material Symbols. They aren't in this
+repository: their license covers apps for Apple platforms, so get them from Apple and keep them on your machine.
+
+1. Install SF Symbols from [developer.apple.com/sf-symbols](https://developer.apple.com/sf-symbols/) (it also installs
+   the SF Pro font; the fonts alone are at [developer.apple.com/fonts](https://developer.apple.com/fonts/)).
+2. Copy the font: `mkdir -p local/assets/fonts && cp /Library/Fonts/SF-Pro.ttf local/assets/fonts/`
+3. Render the icons from the symbols built into macOS: `swift tools/make_sf_symbols.swift`
+4. Build as usual: `./build.sh` says *Using local/assets (personal build)*.
+
+`local/` is in `.gitignore`. Without it, the app uses Inter and Material Symbols, as shipped.
+
 ## Going back
 
 On the TV: *Free My TV* → *Home Screen* → *Original*. The factory home screen, screensaver and every app come back exactly as they were. If the new home screen ever crashes three times in five minutes, it switches back by itself.
