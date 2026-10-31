@@ -332,7 +332,8 @@ final class HomeApps {
                 new Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS).setPackage("com.android.tv.settings"));
         device(c, items, "sound", Ui.tr("Sound"), "speaker",
                 new Intent("com.android.tv.action.VIEW_SOUND_SETTINGS").setPackage("com.android.tv.settings"));
-        device(c, items, "bluetooth", Ui.tr("Bluetooth"), "gamepad",
+        device(c, items, "bluetooth", Ui.tr("Bluetooth"), Symbols.get(c, "bluetooth") != null ? "bluetooth" : "gamepad",   // radio waves (SF Symbols' build), else a controller
+               
                 new Intent("com.android.tv.settings.ACCESSORIES_CONNECTED_DEVICES").setPackage("com.android.tv.settings"));
         return items;
     }
