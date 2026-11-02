@@ -23,11 +23,14 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -133,7 +136,7 @@ final class Rows {
 
     List<Row> rows() {
         if (!Recs.hasKey(context)) return new ArrayList<>();
-        // The playlists' row is saved with every playlist; this hour's are picked from them.
+        // The playlists' row is saved with every playlist; this half hour's are picked from them.
         List<Row> out = new ArrayList<>(rows);
         for (int i = 0; i < out.size(); i++) {
             Row r = out.get(i);
@@ -147,7 +150,8 @@ final class Rows {
         long now = System.currentTimeMillis();
         if (failedAt != 0 && now - failedAt < 10 * 60_000L && now >= failedAt) return;
         boolean stale = rows.isEmpty() || now - fetchedAt > EVERY || now < fetchedAt
-                || !Ui.language.equals(cache.getString("language", ""));
+                || !Ui.language.equals(cache.getString("language", ""))
+                || cache.getInt("playlists", 0) != Arrays.deepHashCode(PLAYLISTS);   // a changed list is fetched at once
         if (!stale) return;
         fetching = true;
         io.execute(() -> {
@@ -161,7 +165,7 @@ final class Rows {
                 fetchedAt = System.currentTimeMillis();
                 failedAt = 0;
                 cache.edit().putString("rows", toJson(next).toString()).putString("pool", toJson(wrapped).toString()).putLong("at", fetchedAt)
-                        .putString("language", Ui.language).apply();
+                        .putString("language", Ui.language).putInt("playlists", Arrays.deepHashCode(PLAYLISTS)).apply();
             } catch (Exception e) {
                 failedAt = System.currentTimeMillis();
                 AppLog.w("rows: " + e.getMessage());
@@ -386,7 +390,7 @@ final class Rows {
 
     // MARK: - Spotify (its editorial playlists: names and covers from the public oEmbed, no account)
 
-    /** {playlist, style}: house, lo-fi, R&B, pop and chill (what's played in this house). A new selection every hour. */
+    /** {playlist, style}: house, lo-fi, R&B, pop and chill (what's played in this house). A new selection every half hour. */
     private static final String[][] PLAYLISTS = {
         {"37i9dQZF1DX2TRYkJECvfC", "House"}, {"37i9dQZF1DXa8NOEUWPn9W", "House"}, {"37i9dQZF1DX0AMssoUKCz7", "House"},
         {"37i9dQZF1DX0r3x8OtiwEM", "House"}, {"37i9dQZF1DX4dyzvuaRJ0n", "Dance"}, {"37i9dQZF1DX8tZsk68tuDw", "Dance"},
@@ -400,16 +404,27 @@ final class Rows {
         {"37i9dQZF1DXdPec7aLTmlC", "Pop"}, {"37i9dQZF1DWWEcRhUVtL8n", "Pop"}, {"37i9dQZF1DX4fpCWaHOned", "Pop"},
         {"37i9dQZF1DX889U0CL85jj", "Chill"}, {"37i9dQZF1DX4WYpdgoIcn6", "Chill"}, {"37i9dQZF1DWTvNyxOwkztu", "Chill"},
         {"37i9dQZF1DXc8kgYqQLMfH", "Chill"}, {"37i9dQZF1DX1s9knjP51Oa", "Chill"},
+        // More of each, so the hours look different (each checked on Spotify's oEmbed)
+        {"37i9dQZF1DX0SM0LYsmbMT", "Lo-fi"}, {"37i9dQZF1DWXLeA8Omikj7", "Lo-fi"}, {"37i9dQZF1DX1n9whBbBKoL", "Lo-fi"},
+        {"37i9dQZF1DX6GwdWRQMQpq", "R&B"}, {"37i9dQZF1DXdwmD5Q7Gxah", "R&B"}, {"37i9dQZF1DX6GJXiuZRisr", "R&B"},
+        {"37i9dQZF1DX6aTaZa0K6VA", "Pop"}, {"37i9dQZF1DX2L0iB23Enbq", "Pop"}, {"37i9dQZF1DX5Vy6DFOcx00", "Pop"},
+        {"37i9dQZF1DX1g0iEXLFycr", "Pop"}, {"37i9dQZF1DX9XIFQuFvzM4", "Pop"}, {"37i9dQZF1DWYBO1MoTDhZI", "Pop"},
+        {"37i9dQZF1DX0FOF1IUWK1W", "Pop"}, {"37i9dQZF1DX7gIoKXt0gmx", "Pop"}, {"37i9dQZF1DX1BzILRveYHb", "Pop"},
+        {"37i9dQZF1DX0BcQWzuB7ZO", "Dance"}, {"37i9dQZF1DX8a1tdzq5tbM", "Dance"}, {"37i9dQZF1DX3Kdv0IChEm9", "Dance"},
+        {"37i9dQZF1DX4Y4RhrZqHhr", "Dance"}, {"37i9dQZF1DWSf2RDTDayIx", "House"},
+        {"37i9dQZF1DX6VdMW310YC7", "Chill"}, {"37i9dQZF1DX2yvmlOdMYzV", "Chill"}, {"37i9dQZF1DX3Ogo9pFvBkY", "Chill"},
+        {"37i9dQZF1DWU0ScTcjJBdj", "Chill"}, {"37i9dQZF1DX4xuWVBs4FgJ", "Chill"}, {"37i9dQZF1DWYxwmBaMqxsl", "Chill"},
     };
-    /** Styles in the order they take turns, and how many of each an hour shows. */
+    /** Styles in the order they take turns, and how many of each a half hour shows (20 in all). */
     private static final String[] STYLES = {"House", "Lo-fi", "R&B", "Pop", "Dance", "Chill"};
-    private static final int[] PER_HOUR = {3, 3, 3, 3, 1, 1};
+    private static final int[] PER_SLOT = {4, 4, 4, 4, 2, 2};
+    private static final long SLOT = 30 * 60_000L;   // a new selection every half hour
 
-    /** The hero's "Listen now": this hour's first playlist, its cover as the background (Recs builds it). */
+    /** The hero's "Listen now": this half hour's first playlist, its cover as the background (Recs builds it). */
     Recs.Pick listenNow() {
         for (Row r : rows()) {
             if (!r.square || r.items.isEmpty()) continue;
-            Recs.Pick p = r.items.get((int) (System.currentTimeMillis() / 3600_000L % r.items.size()));
+            Recs.Pick p = r.items.get((int) (System.currentTimeMillis() / SLOT % r.items.size()));
             Recs.Pick h = new Recs.Pick();
             h.id = p.id;
             h.kind = "playlist";
@@ -426,21 +441,22 @@ final class Rows {
         return null;
     }
 
-    /** This hour's playlists from the whole set: each style starts somewhere else every hour, the styles taking turns. */
+    /**
+     * This half hour's playlists from the whole set: each style's shuffled with the half hour as the seed (a stepping
+     * window kept showing the same few covers), then the styles taken in a shuffled order, so the first cards change too.
+     */
     private static List<Recs.Pick> playlistsNow(List<Recs.Pick> all) {
-        long hour = System.currentTimeMillis() / 3600_000L;
+        long slot = System.currentTimeMillis() / SLOT;
         List<List<Recs.Pick>> picked = new ArrayList<>();
         for (int s = 0; s < STYLES.length; s++) {
             List<Recs.Pick> style = new ArrayList<>();
             for (Recs.Pick p : all) if (STYLES[s].equals(p.meta)) style.add(p);
-            List<Recs.Pick> now = new ArrayList<>();
-            for (int i = 0; i < PER_HOUR[s] && i < style.size(); i++) {
-                now.add(style.get((int) ((hour * PER_HOUR[s] + i) % style.size())));
-            }
-            picked.add(now);
+            Collections.shuffle(style, new Random(slot * 31 + s));
+            picked.add(style.subList(0, Math.min(PER_SLOT[s], style.size())));
         }
+        Collections.shuffle(picked, new Random(slot));
         List<Recs.Pick> out = new ArrayList<>();
-        for (int i = 0; i < 3; i++) for (List<Recs.Pick> l : picked) if (i < l.size()) out.add(l.get(i));
+        for (int i = 0; i < 4; i++) for (List<Recs.Pick> l : picked) if (i < l.size()) out.add(l.get(i));
         return out;
     }
 

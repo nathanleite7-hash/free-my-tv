@@ -737,7 +737,8 @@ final class Recs {
                     JSONObject s = sources.getJSONObject(i);
                     String name = s.optString("name").toLowerCase(Locale.ROOT).replace(" ", "");
                     String want = service[0].replace(" ", "");
-                    boolean same = want.equals("max") ? name.equals("max") : name.contains(want);
+                    // Watchmode calls Max "HBO Max" again (2025); exact names, since "max" is inside others
+                    boolean same = want.equals("max") ? name.equals("max") || name.equals("hbomax") : name.contains(want);
                     if (same && s.optString("type").equals("sub") && s.optString("web_url").startsWith("https://")) link = s.optString("web_url");
                 }
             }

@@ -77,6 +77,14 @@ final class NowPlaying {
         start();
     }
 
+    /**
+     * Reads the session again. The music views ask every second: in the screensaver a player's callbacks can stop
+     * arriving (the next song, the position), and Spotify may swap its session for a new one between songs.
+     */
+    void refresh() {
+        if (sessions != null) pick();
+    }
+
     void removeListener(Listener l) {
         listeners.remove(l);
     }
@@ -161,8 +169,11 @@ final class NowPlaying {
         app = pkg == null ? "" : pkg.startsWith("com.spotify") ? "Spotify" : appName(pkg);
         playing = s != null && s.getState() == PlaybackState.STATE_PLAYING;
         position = s == null ? 0 : Math.max(0, s.getPosition());
-        positionAt = s == null ? SystemClock.elapsedRealtime() : s.getLastPositionUpdateTime();
-        if (positionAt <= 0) positionAt = SystemClock.elapsedRealtime();
+        long now = SystemClock.elapsedRealtime();
+        positionAt = s == null ? now : s.getLastPositionUpdateTime();
+        // A report stamped with another clock (uptime: after standby it's hours behind) or from the future would run the
+        // bar to the end and stop it there: past 10 minutes away from now, it counts as just made.
+        if (positionAt <= 0 || positionAt > now || now - positionAt > 600_000L) positionAt = now;
         speed = s == null || s.getPlaybackSpeed() <= 0 ? 1 : s.getPlaybackSpeed();
         // The cover can come after the text (a placeholder first): its address or its pixels are part of the key.
         String uri = md == null ? null : md.getString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI);

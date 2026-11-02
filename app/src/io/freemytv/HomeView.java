@@ -557,6 +557,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         Photos.importInbox(getContext(), ownReady);   // photos a computer just sent
         if (tvInputs != null) tvInputs.registerCallback(inputCallback, handler);
         handler.postDelayed(tick, 15_000);
+        handler.removeCallbacks(nowRefresh);
+        handler.postDelayed(nowRefresh, 2000);
         handler.removeCallbacks(heroAuto);
         handler.postDelayed(heroAuto, HERO_AUTO_MS);
         checkNotices();
@@ -587,6 +589,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         okHeld = holdArmed = false;
         Choreographer.getInstance().removeFrameCallback(this);
         handler.removeCallbacks(tick);
+        handler.removeCallbacks(nowRefresh);
         handler.removeCallbacks(heroAuto);
         handler.removeCallbacks(reloadSoon);
         data.removeListener(this);
@@ -680,6 +683,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         Prefs.setEyeCareDay(day);
         showToast(Ui.tr("It's dark out: Night Shift, in Picture (the drawer), is easier on the eyes."));
     }
+
+    /** What's playing, read from the player every 2 s while the home shows: its callbacks alone can miss the next song. */
+    private final Runnable nowRefresh = new Runnable() {
+        @Override public void run() {
+            nowPlaying.refresh();
+            if (running) handler.postDelayed(this, 2000);
+        }
+    };
 
     /** The track changed, or it was paused or played: the hero's first slide follows (only when something changed). */
     @Override public void onNowPlaying() {

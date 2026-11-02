@@ -79,7 +79,7 @@ public final class NowPlayingActivity extends Activity {
         private BitmapShader coverShader;
         private int focused = PLAY;
         private boolean running;
-        private long startedAt, lastNanos, lastDraw;
+        private long startedAt, lastNanos, lastDraw, lastRefresh;
         private int w, h;
         private float k = 1;
 
@@ -130,6 +130,10 @@ public final class NowPlayingActivity extends Activity {
         @Override public void doFrame(long nanos) {
             if (!running) return;
             // 30 frames a second: the background moves slowly, the progress a pixel at a time.
+            if (nanos - lastRefresh > 1_000_000_000L) {   // once a second, the song and its position from the session itself
+                lastRefresh = nanos;
+                np.refresh();
+            }
             if (nanos - lastDraw > 30_000_000L) {
                 lastDraw = nanos;
                 invalidate();
