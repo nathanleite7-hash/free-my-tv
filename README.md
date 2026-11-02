@@ -9,11 +9,81 @@
 Trending picks from your own apps, the weather at a glance, and a look that follows the sunset.<br>
 Open source. Built with Claude Code. One button to undo.
 
-[**freemytv.io**](https://freemytv.io) · [Install](#install) · [LG TVs](#lg-tvs-webos) · [Samsung TVs](#samsung-tvs-tizen) · [Any TV](#any-tv) · [Make it yours](#make-it-yours)
+[**Start here**](#start-here-no-experience-needed) · [The V2 design](#the-v2-design) · [Install](#install) · [LG TVs](#lg-tvs-webos) · [Samsung TVs](#samsung-tvs-tizen) · [Make it yours](#make-it-yours)
 
-<img src=".github/preview.webp" width="880" alt="The Free My TV home screen: a glass shelf of apps, trending picks, and a drawer with the weather and crypto prices">
+<img src=".github/v2-home.jpg" width="880" alt="The V2 home screen: tonight's pick with Surprise me, what's playing on Spotify with its controls, the weather, the dollar, and the apps under them">
 
 </div>
+
+> **This is a fork** of [simbasjungles/free-my-tv](https://github.com/simbasjungles/free-my-tv) with a new design for
+> Google TV and Android TV, **V2**: a bento of widgets on the home screen, a control panel of shortcuts, a new
+> screensaver and new settings. Everything else (the install, the safety net, going back) works as in the original.
+
+## Start here (no experience needed)
+
+You don't need to know how to code. An AI assistant, **Claude Code**, does the technical part: it downloads this
+project, installs the tools, builds the app and puts it on your TV, and it asks before anything important. You only
+press a few buttons on the TV.
+
+**What you need:** a Google TV or Android TV (Android 8 or newer: TCL, Sony, Hisense, Philips, Xiaomi, Chromecast with
+Google TV…) and a computer (Mac, Windows or Linux) on the **same Wi-Fi** as the TV.
+
+1. **Get Claude Code.** Download the Claude app from [claude.com/download](https://claude.com/download), sign in, and
+   open the **Code** tab (or install the terminal version from [claude.com/claude-code](https://claude.com/claude-code)).
+   It needs a paid Claude plan.
+2. **Get your TV ready** (2 minutes, on the TV with the remote):
+   - Settings → System → About → press **Android TV OS build** 7 times, until it says you're a developer.
+   - Settings → System → **Developer options** → turn on **USB debugging**.
+   - Settings → Network & Internet → your Wi-Fi → write down the **IP address** (it looks like `192.168.1.50`).
+3. **Ask Claude.** In Claude Code, choose an empty folder to work in, then copy and paste this message (change the IP
+   address and the city to yours):
+   > Install Free My TV from github.com/nathanleite7-hash/free-my-tv on my TV at 192.168.1.50, with the V2 design.
+   > I live in Lisbon. Explain each step to me in simple words and tell me what to press on the TV.
+4. **Follow along.** Claude explains each step. When the TV shows **Allow USB debugging?**, tick **Always allow** and
+   press OK. When it asks for a TMDB key (for the movie and show picks), it shows you how to get one for free; it's
+   optional.
+5. **Switch the home screen.** At the end, on the TV, open the **Free My TV** app → *Home Screen* → *Free My TV*. The TV
+   asks *Allow USB debugging?* once more: tick *Always allow* and accept. Press Home: that's your new home screen.
+
+**Changed your mind?** Free My TV → *Home Screen* → *Original* brings the TV back exactly as it was. Nothing is
+uninstalled, and nothing on the TV is rooted.
+
+## The V2 design
+
+Picked with `home_layout=v2` in `config.properties` (the default in this fork; `v1` is the original design).
+
+- **A bento of widgets.** A greeting by the time of day ("Good evening, …", with your name if you set `greeting_name`)
+  and the date at the top. Below it:
+  - **Tonight's pick**, a movie or show from your apps, full bleed with a soft blur at the bottom. It changes each
+    time you come back to the home screen and every 5 minutes, never while you're looking at it.
+    **Surprise me** draws one of Netflix's titles: the photo flicks through them, slows down and lands.
+  - **What's playing** on Spotify (or any app): the track's cover, title, artist and progress, with previous, play/pause
+    and next working from the remote. Nothing playing? Play opens Spotify.
+  - **The weather** for your city, and **the dollar** with the day's change, green when it's up and red when it's down.
+- **Your apps** right under the widgets, each with its brand's mark (optional, [below](#the-shelfs-marks-optional)).
+- **Rows** further down: Spotify playlists (20, a new selection every half hour) and Netflix's Top 10 movies and shows.
+- **The background** is tonight's pick, blurred and dark.
+- **The control panel** (the button next to Settings, or Down past the last row): picture mode, Wi-Fi, Bluetooth, audio
+  output, the screensaver now, picture, sound, all apps, home settings and the TV's settings, as a bento of modules.
+- **The screensaver:** a photo full screen, drifting slowly, a new one every 20 seconds with a long crossfade. While music
+  plays, the song as a headline at the bottom with its cover and progress. In Settings → Screensaver → **Source**:
+  movies and shows (your picks), aesthetic photos (Unsplash), public-domain **paintings** (Monet, Van Gogh, Cézanne,
+  Renoir, Degas) or a slowly moving gradient; and the photo's **brightness**.
+- **Settings** as a bento too, opening on the screensaver's.
+
+<p>
+<img src=".github/v2-gaveta.jpg" width="430" alt="The control panel: picture mode, Wi-Fi, Bluetooth, audio output, the screensaver and more">
+<img src=".github/v2-screensaver.jpg" width="430" alt="The screensaver: a painting full screen, with the song that's playing at the bottom">
+</p>
+<img src=".github/v2-settings.jpg" width="430" alt="Settings as a bento of categories">
+
+V2 is for Google TV and Android TV. On LG and Samsung TVs the app has the original design.
+
+### The shelf's marks (optional)
+
+On a Mac, `swift tools/make_marks.swift` downloads the apps' symbols (Netflix's N, Spotify's circle…) into
+`local/assets/marks`, which stays out of git: brand marks belong to their owners. Build again and the shelf shows them,
+each in its color. Without them, it shows each app's own logo.
 
 ## What you get
 
@@ -36,14 +106,14 @@ About ten minutes. You need a Google TV or Android TV (Android 8 or newer) and a
 
 1. **On the TV**, turn on developer mode: Settings → System → About → press *Android TV OS build* 7 times. Then Settings → System → Developer options → turn on **USB debugging**. Write down the TV's IP address (Settings → Network & Internet).
 2. **On your computer**, open an AI coding assistant ([Claude Code](https://claude.com/claude-code), Codex or Antigravity) and say:
-   > Install Free My TV (github.com/simbasjungles/free-my-tv) on my TV at 192.168.1.50. I live in Lisbon.
+   > Install Free My TV (github.com/nathanleite7-hash/free-my-tv) on my TV at 192.168.1.50. I live in Lisbon.
 
    It downloads the code, installs the tools it needs, builds the app and puts it on your TV, and asks before anything important. Swap in your TV's IP and your city.
 3. **On the TV**, open *Free My TV* → *Home Screen* → *Free My TV*. That's when the TV asks *Allow USB debugging?* for Free My TV: tick *Always allow* and accept.
 
 ### The ready APK
 
-No tools to install besides adb. The APK on the [latest release](https://github.com/simbasjungles/free-my-tv/releases/latest) has no TMDB key, so the home screen has no picks, and it takes your city from the TV's time zone (change it in *Home Settings* → *City*).
+No tools to install besides adb. This is the original project's APK, with the **original design** (V2 needs your own build, above). The APK on the [latest release](https://github.com/simbasjungles/free-my-tv/releases/latest) has no TMDB key, so the home screen has no picks, and it takes your city from the TV's time zone (change it in *Home Settings* → *City*).
 
 1. **On the TV**, do step 1 above.
 2. **On your computer**, download `FreeMyTV.apk` from the release and install it:
@@ -94,7 +164,7 @@ You need an LG TV (webOS 3 or newer) and a computer on the same Wi-Fi, with Pyth
 1. **On the TV**, open the LG Content Store and install **Developer Mode**. Sign in with a free [LG developer account](https://webostv.developer.lge.com), turn on **Dev Mode Status** (the TV restarts), then turn on **Key Server**. Write down the IP address and the passphrase it shows.
 2. **On your computer**, get the code and build. `config.properties` works as for Google TV (your city, your [TMDB key](#the-tmdb-key)):
    ```bash
-   git clone https://github.com/simbasjungles/free-my-tv && cd free-my-tv
+   git clone https://github.com/nathanleite7-hash/free-my-tv && cd free-my-tv
    python3 webos/build.py
    ```
 3. **Install.** The first time, it asks for the TV's passphrase; updates don't:
@@ -103,7 +173,7 @@ You need an LG TV (webOS 3 or newer) and a computer on the same Wi-Fi, with Pyth
    ```
 4. **On the TV**, while Free My TV is open, hold a number key on the remote. From then on, that key opens it from anywhere. On a remote without number keys, open it from LG's app list on the home screen, like any other app.
 
-With an AI assistant, say *"Install Free My TV (github.com/simbasjungles/free-my-tv) on my LG TV at 192.168.1.50. I live in Lisbon."* It builds the app and hands you the install command, so you type the passphrase yourself.
+With an AI assistant, say *"Install Free My TV (github.com/nathanleite7-hash/free-my-tv) on my LG TV at 192.168.1.50. I live in Lisbon."* It builds the app and hands you the install command, so you type the passphrase yourself.
 
 With the [webOS Homebrew Channel](https://github.com/webosbrew/webos-homebrew-channel), you can skip the computer: add the repository `https://freemytv.io/webos/apps.json` in the Channel's settings, and Free My TV shows up in its list. That's the release build: it takes the city from the TV's time zone, and the picks need your own build with a [TMDB key](#the-tmdb-key). If you installed your own build, don't update it from there, or the release replaces it.
 
@@ -130,6 +200,8 @@ The first values come from `config.properties`, created by the first build (Goog
 
 | Key | What it does | Default |
 |---|---|---|
+| `home_layout` | `v2` (the [V2 design](#the-v2-design)) or `v1` (the original one). Google TV only | `v2` |
+| `greeting_name` | The name after the V2 greeting ("Good evening, Ana"); empty says "everyone" | empty |
 | `tmdb_key` | Your free TMDB key, for the picks | empty |
 | `tmdb_region` | Your country (two letters): which titles are on which app | `US` |
 | `watchmode_key` | Optional, free [Watchmode](https://api.watchmode.com/) key: a pick opens the title's page in its app | empty |
@@ -239,7 +311,9 @@ It's your code, and Claude Code finds its way around it. Try:
 
 | File | What it is |
 |---|---|
-| [`HomeView.java`](app/src/io/freemytv/HomeView.java) | The home screen |
+| [`HomeView.java`](app/src/io/freemytv/HomeView.java) | The home screen (original design) |
+| [`BentoHome.java`](app/src/io/freemytv/BentoHome.java) | The V2 home screen and its control panel |
+| [`SaverV2.java`](app/src/io/freemytv/SaverV2.java) | The V2 screensaver |
 | [`HomeMode.java`](app/src/io/freemytv/HomeMode.java) | Switching between Free My TV and Original |
 | [`Adb.java`](app/src/io/freemytv/Adb.java) | The TV's own ADB, from inside the TV |
 | [`Recs.java`](app/src/io/freemytv/Recs.java) | The picks (TMDB) |
@@ -255,7 +329,7 @@ It's your code, and Claude Code finds its way around it. Try:
 | [`webos/build.py`](webos/build.py), [`webos/install.py`](webos/install.py) | The LG app package and its install |
 | [`tizen/build.py`](tizen/build.py) | The Samsung app package |
 
-The website ([freemytv.io](https://freemytv.io)) is in [`docs/`](docs): plain HTML, CSS and JS on GitHub Pages.
+The original project's website ([freemytv.io](https://freemytv.io)) is in [`docs/`](docs).
 
 ## Translations
 
@@ -285,12 +359,14 @@ No accounts, no analytics, no tracking. The app talks to TMDB, Open-Meteo (with 
 
 ## Credits
 
+- The original [Free My TV](https://github.com/simbasjungles/free-my-tv) by [@simbasjungles](https://github.com/simbasjungles) and its contributors. The V2 design by [@nathanleite7-hash](https://github.com/nathanleite7-hash).
 - Built with [Claude Code](https://claude.com/claude-code).
 - The LG version builds on what [@danielthejoker18](https://github.com/danielthejoker18) found in [FreeMyTvWebOS](https://github.com/danielthejoker18/FreeMyTvWebOS) (MIT): installing through Developer Mode and opening apps through the TV's service bus.
 - On Samsung TVs it installs with [TizenBrew Installer](https://github.com/reisxd/TizenBrewInstaller) by [@reisxd](https://github.com/reisxd).
 - This product uses the TMDB API but is not endorsed or certified by [TMDB](https://www.themoviedb.org/).
 - Links to the titles in the streaming apps by [Watchmode](https://api.watchmode.com/).
 - Weather data by [Open-Meteo.com](https://open-meteo.com/) (CC BY 4.0). Prices from the [Binance](https://www.binance.com/) public API.
+- The screensaver's paintings: public domain, from [Wikimedia Commons](https://commons.wikimedia.org) (listed with [Wikidata](https://www.wikidata.org)). Aesthetic photos: [Unsplash](https://unsplash.com), credited on screen.
 - Icons: [Material Symbols](https://fonts.google.com/icons) (Apache 2.0). Font: [Inter](https://rsms.me/inter/) (SIL OFL 1.1). Coin logos: [cryptocurrency-icons](https://github.com/spothq/cryptocurrency-icons) (CC0). Samsung app logos: [Simple Icons](https://simpleicons.org) (CC0).
 - Not affiliated with Google, TCL, LG, Samsung or any streaming service. App names and logos belong to their owners.
 

@@ -1,11 +1,17 @@
 # Free My TV: notes for Claude
 
+This is a fork (github.com/nathanleite7-hash/free-my-tv) of simbasjungles/free-my-tv with a second design for Google TV
+and Android TV, **V2** (`home_layout=v2`, the default here): `BentoHome` (the home: a bento of widgets, the control panel
+of shortcuts, All Apps), `SaverV2` (the screensaver) and V2 branches in `SettingsActivity` (`Config.HOME_V2`). The
+original design (`home_layout=v1`) is `HomeView` and `DreamView`, untouched. LG and Samsung (`web/`) have only the
+original design. The people installing it may never have used a terminal: explain each step in plain words.
+
 A home screen for Google TV and Android TV that replaces the stock one, plus a settings app that switches between
 Free My TV and the TV's original home screen. A plain Android app in Java, built without Gradle by `build.sh`.
 LG TVs (webOS) and Samsung TVs (Tizen) get the same home screen as a web app: `web/`, packed by `webos/` and `tizen/`
 (see below).
-The website (freemytv.io) is in `docs/`: static HTML, CSS and JS, no build step. A push to `main` that changes it
-publishes it to GitHub Pages (`.github/workflows/pages.yml`). `docs/index.html` (English) and `docs/pt/index.html`
+The original project's website (freemytv.io) is in `docs/`: static HTML, CSS and JS, no build step. This fork doesn't
+publish it (the original's `pages.yml` workflow is removed here). `docs/index.html` (English) and `docs/pt/index.html`
 (Brazilian Portuguese) are the same page in two languages, so change both; visitors from Brazil land on the
 Portuguese one by themselves, and the PT/EN switch in the menu is remembered.
 Before you push, run `tools/check.sh`: the Google TV build, `translate.py --check`, the LG and Samsung packages and
@@ -25,6 +31,11 @@ before you do it, and let them do the taps on the TV.
    - Windows: Git Bash (what Claude Code runs there; `build.sh` handles it) or WSL, then as on Linux.
 3. **Settings:** run `./build.sh` once; it creates `config.properties`. Fill in `latitude` and `longitude` (decimal
    degrees) and `city` for their city, `tmdb_region` (two-letter country), `show_crypto`, `currency` and `temperature` to match.
+   Ask which design they want: V2 (`home_layout=v2`, the default; show them `.github/v2-home.jpg` if they're unsure) or
+   the original (`v1`). For V2, ask what name the greeting should use (`greeting_name`, e.g. a nickname for the
+   household; empty says "everyone"). That name stays in `config.properties`, never in the code.
+   On a Mac, offer the shelf's brand marks (`swift tools/make_marks.swift`, into `local/`) and Apple's SF Pro and SF
+   Symbols (README, "Apple's SF Pro and SF Symbols"): both optional, both kept out of git.
 4. **The TMDB key is theirs and secret.** Ask them to create one (free: themoviedb.org → Settings → API) and paste it
    after `tmdb_key=` in `config.properties` themselves. Don't ask for it in the chat, never print it, never commit
    it. If they paste it in the chat anyway, put it only in `config.properties`.
@@ -183,6 +194,22 @@ entries; its system pieces are in `PROTECTED`. USB debugging opens ADB on 5555 t
 `adb shell cmd package set-home-activity <stock home activity>` and
 `adb shell settings put secure screensaver_components <stock screensaver>`. On an HY300 with JmLauncher, also
 `adb shell setprop persist.sys.home.selectpkg ''`.
+
+## The V2 design (BentoHome, SaverV2)
+
+- One View each, drawn on a Canvas in 1920×1080 units times `k`. Same rules as `HomeView`: no allocations in `onDraw`
+  (paints, shaders and text made when the data or the size changes), Spring for every motion, `Ui.tr` for every string.
+- `BentoHome` reads `Recs` (tonight's pick: `now()`, a new one on resume and every 5 minutes unless the card has the
+  focus or shows a drawn title; Surprise me draws from `wanted()`'s Netflix titles), `NowPlaying` (`refresh()` every
+  second: a player's callbacks can stop), `HomeData` (weather, `prices[3]`/`changes[3]` for the dollar) and `Rows`
+  (the square row and the ranked ones). Its control panel opens the TV's own screens through `HomeApps.quickSettings`
+  and `DEVICE` items only where the TV resolves them.
+- `SaverV2`'s sources are `Prefs.saverSource()`: `titles` (`Recs.showcase()`'s images), `aesthetic` (Unsplash photos,
+  hotlinked as its guidelines ask, the photographer credited on screen), `painters` (`app/assets/paintings.json`:
+  public-domain paintings on Wikimedia Commons) and `animated` (drawn). Photos are cached in the app's cache dir
+  (`saver/`), decoded at the screen's size.
+- Optional, out of git: `local/assets/marks` (the shelf's marks, `tools/make_marks.swift`), SF Pro and SF Symbols.
+  Without them the app falls back to the apps' logos and Inter/Material Symbols.
 
 ## The code
 
