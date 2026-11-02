@@ -10,6 +10,7 @@ import android.service.dreams.DreamService;
 public class Screensaver extends DreamService {
     private DreamView view;
     private NowPlayingActivity.NowPlayingView music;   // instead of the photos while music plays
+    private SaverV2 v2;   // the V2 one (home_layout=v2): photos, with the song over them while music plays
 
     @Override public void onAttachedToWindow() {
         super.onAttachedToWindow();
@@ -19,6 +20,11 @@ public class Screensaver extends DreamService {
         setFullscreen(true);
         setScreenBright(true);
         // Music playing: its cover and its colors, like Apple TV's screensaver for music; else the photos.
+        if (Config.HOME_V2) {
+            v2 = new SaverV2(this);
+            setContentView(v2);
+            return;
+        }
         NowPlaying np = NowPlaying.get(this);
         np.prime();
         if (np.active() && np.playing) {
@@ -34,17 +40,20 @@ public class Screensaver extends DreamService {
         super.onDreamingStarted();
         if (view != null) view.start();
         if (music != null) music.start();
+        if (v2 != null) v2.start();
     }
 
     @Override public void onDreamingStopped() {
         if (view != null) view.stop();
         if (music != null) music.stop();
+        if (v2 != null) v2.stop();
         super.onDreamingStopped();
     }
 
     @Override public void onDetachedFromWindow() {
         if (view != null) view.stop();
         if (music != null) music.stop();
+        if (v2 != null) v2.stop();
         super.onDetachedFromWindow();
     }
 }

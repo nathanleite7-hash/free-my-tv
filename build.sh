@@ -74,6 +74,8 @@ final class Config {
     static final String TEMPERATURE = "$(prop temperature auto)";
     static final String HIDE_SERVICES = "$(prop hide_services '')";
     static final String THEME = "$(prop theme auto)";
+    static final boolean HOME_V2 = "$(prop home_layout v1)".equals("v2");   // the V2 home (bento) instead of the V1.7 one
+    static final String GREETING_NAME = "$(prop greeting_name '')";
     static final boolean DISABLE_ASSISTANT = $ASSIST;
     static final boolean SHOW_CRYPTO = $CRYPTO;
     static final boolean HIDE_ANIMATION = $ANIMATION;

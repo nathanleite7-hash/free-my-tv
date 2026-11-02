@@ -238,6 +238,7 @@ public class SettingsActivity extends Activity {
             super(a);
             activity = a;
             for (int i = 0; i < pop.length; i++) pop[i] = new Spring(0.28f, 0.85f, 0);
+            if (Config.HOME_V2) focus = 1;   // the bento opens on its big module, the screensaver
             HomeData.Weather wx = HomeData.get(a).weather;
             Shaders.sky(scene.palette, System.currentTimeMillis(), wx.sunrise, wx.sunset);
             scene.setMotion(0.5f, 0.2f);
@@ -435,7 +436,7 @@ public class SettingsActivity extends Activity {
                 case PICKER: return Math.min(PICK_VISIBLE, pickLabels.size());
                 case SHELF_EDIT: return Math.min(PICK_VISIBLE, shelfRows.size());
                 case POWER: return powerRows().length;
-                case SAVER: return 3;
+                case SAVER: return 3 + SO;
                 default: return Prefs.KEYS.length;
             }
         }
@@ -452,6 +453,10 @@ public class SettingsActivity extends Activity {
             long up = SystemClock.uptimeMillis();
             float seconds = (up - startedAt) / 1000f;
             lastSky = up;
+            if (Config.HOME_V2) {
+                drawV2(c, seconds);
+                return;
+            }
             c.drawColor(0xFF0A0A0C);
             c.drawText(Ui.tr("Settings"), CAT_X * k, 160 * k, pageTitle);
             drawCategories(c);
@@ -724,7 +729,14 @@ public class SettingsActivity extends Activity {
 
         boolean onKey(KeyEvent e) {
             boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
-            switch (e.getKeyCode()) {
+            int code = e.getKeyCode();
+            if (Config.HOME_V2 && screen == MAIN && code >= KeyEvent.KEYCODE_DPAD_UP && code <= KeyEvent.KEYCODE_DPAD_RIGHT) {
+                if (down && bentoMove(code == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : code == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : 0,
+                        code == KeyEvent.KEYCODE_DPAD_UP ? -1 : code == KeyEvent.KEYCODE_DPAD_DOWN ? 1 : 0)) spoken.focusMoved();
+                invalidate();
+                return true;
+            }
+            switch (code) {
                 case KeyEvent.KEYCODE_DPAD_UP:
                     if (down && focus > 0) focus--;
                     else if (down && scrolling() && pickScroll > 0) pickScroll--;
@@ -999,12 +1011,14 @@ public class SettingsActivity extends Activity {
 
         private String[] listLabels() {
             return screen == REMOTE_KEYS ? keyLabels() : screen == POWER ? powerLabels()
-                    : screen == SAVER ? new String[] {Ui.tr("Brightness"), Ui.tr("Start after"), Ui.tr("Show now")} : settingLabels();
+                    : screen == SAVER ? (SO == 1 ? new String[] {Ui.tr("Source"), Ui.tr("Brightness"), Ui.tr("Start after"), Ui.tr("Show now")}
+                    : new String[] {Ui.tr("Brightness"), Ui.tr("Start after"), Ui.tr("Show now")}) : settingLabels();
         }
 
         private String[] listValues() {
             return screen == REMOTE_KEYS ? keyValues() : screen == POWER ? powerValues()
-                    : screen == SAVER ? new String[] {Prefs.saverBright() + "%", saverAfterText(), ""} : settingValues();
+                    : screen == SAVER ? (SO == 1 ? new String[] {sourceName(Prefs.saverSource()), Prefs.saverBright() + "%", saverAfterText(), ""}
+                    : new String[] {Prefs.saverBright() + "%", saverAfterText(), ""}) : settingValues();
         }
 
         private static String onOff(boolean on) {
@@ -1081,8 +1095,9 @@ public class SettingsActivity extends Activity {
                 return;
             }
             if (screen == SAVER) {
-                if (focus == 0) Prefs.setSaverBright(Prefs.saverBright() + 10 * dir);
-                if (focus == 1) stepSaverAfter(dir);
+                if (SO == 1 && focus == 0) stepSource(dir);
+                if (focus == SO) Prefs.setSaverBright(Prefs.saverBright() + 10 * dir);
+                if (focus == SO + 1) stepSaverAfter(dir);
                 return;
             }
             if (screen == REMOTE_KEYS) {
@@ -1428,8 +1443,14 @@ public class SettingsActivity extends Activity {
                 Bitmap b = null;
                 String credit = "";
                 try {
+                    String url = Config.HOME_V2 ? SaverV2.firstUrl(c, Prefs.saverSource()) : null;
+                    if (url != null) {
+                        BitmapFactory.Options o = new BitmapFactory.Options();
+                        o.inSampleSize = 4;
+                        b = BitmapFactory.decodeFile(SaverV2.photoFile(c, url).getPath(), o);
+                    }
                     Recs recs = Recs.get(c);
-                    for (Recs.Pick p : recs.showcase()) {
+                    for (Recs.Pick p : b != null || (Config.HOME_V2 && !"titles".equals(Prefs.saverSource())) ? new java.util.ArrayList<Recs.Pick>() : recs.showcase()) {
                         java.io.File f = p.photo != null ? p.photo : recs.readyImage(p);
                         if (f == null || !f.exists()) continue;
                         BitmapFactory.Options o = new BitmapFactory.Options();
@@ -1438,7 +1459,7 @@ public class SettingsActivity extends Activity {
                         credit = p.title == null ? "" : p.title;
                         if (b != null) break;
                     }
-                } catch (RuntimeException e) {
+                } catch (Exception e) {
                     AppLog.w("settings preview: " + e.getMessage());
                 }
                 Bitmap photo = b;
@@ -1478,8 +1499,14 @@ public class SettingsActivity extends Activity {
             previewPaint.setShader(previewShade);
             c.drawRect(tmp, previewPaint);
             previewPaint.setShader(null);
-            c.drawText(Ui.clock(System.currentTimeMillis()), left + 24 * k, top + ph - 44 * k, previewClock);
-            c.drawText(Ui.date(System.currentTimeMillis()), left + 24 * k, top + ph - 20 * k, previewSmall);
+            if (Config.HOME_V2) {   // the V2 screensaver: the time small at the top right, the photo's credit at the top left
+                previewSmall.setTextAlign(Paint.Align.RIGHT);
+                c.drawText(Ui.clock(System.currentTimeMillis()), left + pw - 22 * k, top + 34 * k, previewSmall);
+                previewSmall.setTextAlign(Paint.Align.LEFT);
+            } else {
+                c.drawText(Ui.clock(System.currentTimeMillis()), left + 24 * k, top + ph - 44 * k, previewClock);
+                c.drawText(Ui.date(System.currentTimeMillis()), left + 24 * k, top + ph - 20 * k, previewSmall);
+            }
             previewSmall.setTextAlign(Paint.Align.RIGHT);
             c.drawText(TextUtils.ellipsize(previewCredit, new TextPaint(previewSmall), 200 * k, TextUtils.TruncateAt.END).toString(),
                     left + pw - 22 * k, top + ph - 20 * k, previewSmall);
@@ -1494,6 +1521,152 @@ public class SettingsActivity extends Activity {
 
         private final android.graphics.Path previewClip = new android.graphics.Path();
         private Paint previewClock, previewSmall;
+
+        /** V2: the Screensaver screen has a Source row first (the V2 screensaver's photos). */
+        private static final int SO = Config.HOME_V2 ? 1 : 0;
+
+        private static String sourceName(String key) {
+            switch (key) {
+                case "titles": return Ui.tr("Movies and shows");
+                case "aesthetic": return Ui.tr("Aesthetic photos");
+                case "animated": return Ui.tr("Animated backgrounds");
+                default: return Ui.tr("Painters");
+            }
+        }
+
+        private void stepSource(int dir) {
+            String[] all = Prefs.SAVER_SOURCES;
+            int at = java.util.Arrays.asList(all).indexOf(Prefs.saverSource());
+            Prefs.setSaverSource(all[(Math.max(0, at) + dir + all.length) % all.length]);
+            previewPhoto = null;   // the preview shows the new source
+            loadPreview();
+        }
+
+        // MARK: - V2: the categories as a bento (the Gaveta's modules), each with its state; a category's rows at the left
+        // with the Screensaver's live preview at the right
+
+        /** The bento's modules in 1080p px {col, row, cols, rows} by category (TV Settings: in the Gaveta, not here). */
+        private static final int[][] BENTO = {{2, 0, 2, 1}, {0, 0, 2, 2}, {0, 2, 1, 1}, {2, 1, 2, 1}, {1, 2, 1, 1}, {2, 2, 1, 1}, {3, 2, 1, 1}};
+        private static final int[] BENTO_ACCENT = {0xFF0A84FF, 0xFFFFFFFF, 0xFF8E8E93, 0xFFBF5AF2, 0xFF64D2FF, 0xFFFF9F0A, 0xFF5E5CE6};
+        private static final String[] BENTO_ICON = {"home", "saver", "settings", "apps", "tv", "gamepad", "bedtime"};
+        private final RectF bentoRect = new RectF();
+        private Paint bentoName, bentoSub, crumb;
+
+        private void bentoBox(int i, RectF out) {
+            float cw = (1760 - 3 * 24) / 4f, ch = 240;
+            int[] b = BENTO[i];
+            out.set((80 + b[0] * (cw + 24)) * k, (200 + b[1] * (ch + 24)) * k,
+                    (80 + b[0] * (cw + 24) + b[2] * cw + (b[2] - 1) * 24) * k, (200 + b[1] * (ch + 24) + b[3] * ch + (b[3] - 1) * 24) * k);
+        }
+
+        private String bentoSubtitle(int i) {
+            switch (i) {
+                case 0: return (freeActive() ? "Free My TV" : Ui.tr("Original")) + " · " + Ui.tr("In use");
+                case 1: return sourceName(Prefs.saverSource()) + " · " + Prefs.saverBright() + "%";
+                case 2: return Ui.tr("Language, temperature, theme, sounds, weather and quotes.");
+                case 3: return Ui.trf("{n} apps", "n", Prefs.shelf().size());
+                case 4: return Ui.tr("The round buttons at the top of the home screen.");
+                case 5: return Ui.tr("What the remote's app buttons open.");
+                default: return Ui.tr("Turns the TV off by itself.");
+            }
+        }
+
+        private void drawV2(Canvas c, float seconds) {
+            if (bentoName == null || bentoName.getTextSize() != 26 * k) {
+                bentoName = Ui.text(Ui.semibold, 26 * k, 0xFFFFFFFF);
+                bentoSub = Ui.text(Ui.medium, 21 * k, 0x99EBEBF5);
+                crumb = Ui.text(Ui.semibold, 22 * k, 0x80EBEBF5);
+            }
+            c.drawColor(0xFF0A0A0C);
+            if (screen != MAIN) {
+                c.drawText("‹ " + Ui.tr("Settings"), 80 * k, 110 * k, crumb);
+                c.save();
+                c.translate(-(LIST_X - 80) * k, 0);
+                if (screen == HOME_CHOICE) drawChoice(c); else if (screen == PICKER) drawPicker(c); else if (screen == SHELF_EDIT) drawShelfEditor(c); else drawList(c);
+                c.restore();
+                if (screen == SAVER) {
+                    loadPreview();
+                    drawPreview(c, (1840 - 640) * k, (LIST_TOP + 20) * k);
+                }
+                return;
+            }
+            c.drawText(Ui.tr("Settings"), 80 * k, 140 * k, pageTitle);
+            loadPreview();
+            for (int i = 0; i < BENTO.length; i++) {
+                bentoBox(i, bentoRect);
+                float f = Ui.clamp(pop[i].value);
+                float s = 1 + 0.04f * f;
+                float cx = bentoRect.centerX(), cy = bentoRect.centerY();
+                tmp.set(cx - bentoRect.width() * s / 2, cy - bentoRect.height() * s / 2, cx + bentoRect.width() * s / 2, cy + bentoRect.height() * s / 2);
+                float r = 34 * k;
+                c.save();
+                previewClip.reset();
+                previewClip.addRoundRect(tmp, r, r, android.graphics.Path.Direction.CW);
+                c.clipPath(previewClip);
+                card.setColor(0xFF161618);
+                c.drawRect(tmp, card);
+                if (i == 1 && previewPhoto != null) {   // the screensaver's own photo
+                    float sc = Math.max(tmp.width() / previewPhoto.getWidth(), tmp.height() / previewPhoto.getHeight());
+                    float dw = previewPhoto.getWidth() * sc, dh = previewPhoto.getHeight() * sc;
+                    miniDst.set(tmp.centerX() - dw / 2, tmp.centerY() - dh / 2, tmp.centerX() + dw / 2, tmp.centerY() + dh / 2);
+                    c.drawBitmap(previewPhoto, null, miniDst, previewPaint);
+                    card.setColor(0x73000000);
+                    c.drawRect(tmp, card);
+                } else {
+                    // its color from the top left corner, fading out (the Gaveta's modules)
+                    int a = BENTO_ACCENT[i];
+                    float rad = Math.max(tmp.width(), tmp.height()) * 0.9f;
+                    card.setShader(new android.graphics.RadialGradient(tmp.left, tmp.top, rad, (a & 0x00FFFFFF) | 0x38000000, a & 0x00FFFFFF, Shader.TileMode.CLAMP));
+                    c.drawRect(tmp, card);
+                    card.setShader(null);
+                }
+                c.restore();
+                card.setStyle(Paint.Style.STROKE);
+                card.setStrokeWidth((1.5f + 1.5f * f) * k);
+                card.setColor(blend(0x14FFFFFF, 0x99FFFFFF, f));
+                c.drawRoundRect(tmp, r, r, card);
+                card.setStyle(Paint.Style.FILL);
+                float ix = tmp.left + 56 * k, iy = tmp.top + 56 * k;
+                card.setColor(i == 1 ? 0x33FFFFFF : (BENTO_ACCENT[i] & 0x00FFFFFF) | 0x33000000);
+                c.drawCircle(ix, iy, 32 * k, card);
+                Symbols.draw(getContext(), c, BENTO_ICON[i], ix, iy, 30 * k, i == 1 ? 0xFFFFFFFF : BENTO_ACCENT[i]);
+                String name = categoryLabels()[i];
+                boolean off = unavailable(i) != null;
+                bentoName.setColor(off ? 0x66FFFFFF : 0xFFFFFFFF);
+                c.drawText(name, tmp.left + 28 * k, tmp.bottom - 58 * k, bentoName);
+                String sub = off ? Ui.tr("Unavailable") : bentoSubtitle(i);
+                c.drawText(TextUtils.ellipsize(sub, new TextPaint(bentoSub), tmp.width() - 56 * k, TextUtils.TruncateAt.END).toString(),
+                        tmp.left + 28 * k, tmp.bottom - 26 * k, bentoSub);
+            }
+            Paint hint = Ui.text(Ui.regular, 23 * k, 0x8CEBEBF5);
+            c.drawText(Ui.tr("OK opens · Back closes Settings"), 80 * k, 1030 * k, hint);
+        }
+
+        /** The bento's arrows: the nearest module past this one's edge in that direction. */
+        private boolean bentoMove(int dx, int dy) {
+            RectF cur = new RectF();
+            bentoBox(Math.min(focus, BENTO.length - 1), cur);
+            int best = -1;
+            float bestD = Float.MAX_VALUE;
+            RectF o = new RectF();
+            for (int i = 0; i < BENTO.length; i++) {
+                if (i == focus) continue;
+                bentoBox(i, o);
+                if (dy > 0 && o.top < cur.bottom - 10) continue;
+                if (dy < 0 && o.bottom > cur.top + 10) continue;
+                if (dx > 0 && o.left < cur.right - 10) continue;
+                if (dx < 0 && o.right > cur.left + 10) continue;
+                float ddx = o.centerX() - cur.centerX(), ddy = o.centerY() - cur.centerY();
+                float d = dx != 0 ? Math.abs(ddx) + 2 * Math.abs(ddy) : Math.abs(ddy) + 2 * Math.abs(ddx);
+                if (d < bestD) {
+                    bestD = d;
+                    best = i;
+                }
+            }
+            if (best < 0) return false;
+            focus = best;
+            return true;
+        }
 
         // MARK: - When the screensaver starts (the TV's own timeout: screen_off_timeout starts the screensaver on TV)
 
@@ -1557,7 +1730,7 @@ public class SettingsActivity extends Activity {
                 String value = values[from + i];
                 if (!locked && (value.equals(on) || value.equals(off))) {
                     drawSwitch(c, rowRect.right - 30 * k, rowRect.centerY(), value.equals(on), f);
-                } else if (screen == SAVER && i == 0) {
+                } else if (screen == SAVER && i == SO) {
                     float vx = rowRect.right - 30 * k - rowValue.measureText("100%");
                     c.drawText(value, rowRect.right - 30 * k, base, rowValue);
                     float bw = 240 * k, bx = vx - 24 * k - bw, cy = rowRect.centerY();
@@ -1567,7 +1740,7 @@ public class SettingsActivity extends Activity {
                     card.setColor(blend(0xFFFFFFFF, 0xFF0A0A0C, f));
                     tmp.right = bx + bw * (Prefs.saverBright() - 20) / 80f;
                     c.drawRoundRect(tmp, 5 * k, 5 * k, card);
-                } else if (screen == SAVER && i == 2) {
+                } else if (screen == SAVER && i == SO + 2) {
                     float cw = Symbols.width(getContext(), "chevron_right", 22 * k);
                     Symbols.draw(getContext(), c, "chevron_right", rowRect.right - 30 * k - cw / 2, rowRect.centerY(), 22 * k, blend(0x99FFFFFF, 0x991C1C1E, f));
                 } else {
@@ -1582,10 +1755,11 @@ public class SettingsActivity extends Activity {
             c.drawText(where + (screen == HOME_SETTINGS && from + focus == PHOTOS_ROW ? (Photos.files(getContext()).isEmpty()
                     ? Ui.tr("Send them from a computer: see “Your own photos” in the README.")
                     : Ui.tr("OK removes them; the arrows turn them on or off."))
+                    : screen == SAVER && SO == 1 ? Ui.tr("OK or the arrows change the value.")
                     : screen == SAVER ? Ui.tr("← → change the brightness. The photos dim, the clock stays easy to read.")
                     : screen == POWER && powerRow() != P_SHOW && unavailable(focus) == null ? Ui.tr("OK opens the list. ← → change the value.")
                     : Ui.tr("OK or the arrows change the value.")), LIST_X * k + 30 * k, hy, hint);
-            if (screen == SAVER) drawPreview(c, LIST_X * k, hy + 50 * k);
+            if (screen == SAVER && SO == 0) drawPreview(c, LIST_X * k, hy + 50 * k);
             if (keys) {
                 c.drawText(RemoteKeys.VESTEL ? Ui.tr("YouTube, Prime Video and Google Play: the TV itself controls those buttons.")
                         : RemoteKeys.KTC ? Ui.tr("Netflix, YouTube and Prime Video: the TV itself controls those buttons.")
@@ -1659,8 +1833,9 @@ public class SettingsActivity extends Activity {
                 screen = HOME_CHOICE;
                 focus = freeActive() ? 0 : 1;
             } else if (screen == SAVER) {
-                if (focus == 1) stepSaverAfter(1);
-                if (focus == 2) {
+                if (SO == 1 && focus == 0) stepSource(1);
+                if (focus == SO + 1) stepSaverAfter(1);
+                if (focus == SO + 2) {
                     pause();
                     activity.showPreview();
                 }

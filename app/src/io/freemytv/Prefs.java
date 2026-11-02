@@ -205,6 +205,11 @@ final class Prefs {
 
     /** The sleep timer's minutes left on screen: over any app (SleepOverlay), or where this TV can't, on the home screen. */
     /** The screensaver's brightness, 20 to 100 (%). */
+    /** The V2 screensaver's photos: "titles" (the picks), "aesthetic" (Unsplash), "animated" (drawn here), "painters". */
+    static final String[] SAVER_SOURCES = {"titles", "aesthetic", "animated", "painters"};
+    static String saverSource() { return sp().getString("saverSource", "painters"); }
+    static void setSaverSource(String v) { sp().edit().putString("saverSource", v).apply(); }
+
     static int saverBright() { return Math.max(20, Math.min(100, sp().getInt("saverBright", 100))); }
     static void setSaverBright(int v) { sp().edit().putInt("saverBright", Math.max(20, Math.min(100, v))).apply(); }
 

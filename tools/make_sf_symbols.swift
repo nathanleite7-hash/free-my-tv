@@ -20,6 +20,8 @@ let map: [String: String] = [
     "chevron_down": "chevron.down", "sunrise": "sunrise.fill", "sunset": "sunset.fill",
     "live_tv": "tv.and.mediabox", "bitcoin": "bitcoinsign",
     "keystone": "skew", "cast": "airplayvideo", "bluetooth": "dot.radiowaves.left.and.right",
+    "picmode": "circle.lefthalf.filled", "wifi": "wifi", "audioout": "hifispeaker.2.fill", "saver": "photo.artframe",
+    "controls": "switch.2", "backward": "backward.fill", "forward": "forward.fill", "pause": "pause.fill",
 ]
 
 // SF Symbols draw at about the cap height of their point size: a point size of ~0.64 em gives the visual size the
