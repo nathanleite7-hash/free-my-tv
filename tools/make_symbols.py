@@ -19,6 +19,10 @@ MAP = {
     "chevron_down": ("keyboard_arrow_down", 0), "sunrise": ("wb_twilight", 1), "sunset": ("wb_twilight", 1),
     "live_tv": ("live_tv", 1), "bitcoin": ("currency_bitcoin", 0),
     "keystone": ("settings_overscan", 1), "cast": ("cast", 1),
+    # V2 (the Gaveta, the music widget, the screensaver)
+    "bluetooth": ("bluetooth", 0), "picmode": ("contrast", 1), "wifi": ("wifi", 1), "audioout": ("speaker_group", 1),
+    "saver": ("photo_frame", 1), "controls": ("tune", 1), "backward": ("fast_rewind", 1),
+    "forward": ("fast_forward", 1), "pause": ("pause", 1),
 }
 
 

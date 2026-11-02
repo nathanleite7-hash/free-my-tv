@@ -113,7 +113,7 @@ About ten minutes. You need a Google TV or Android TV (Android 8 or newer) and a
 
 ### The ready APK
 
-No tools to install besides adb. This is the original project's APK, with the **original design** (V2 needs your own build, above). The APK on the [latest release](https://github.com/simbasjungles/free-my-tv/releases/latest) has no TMDB key, so the home screen has no picks, and it takes your city from the TV's time zone (change it in *Home Settings* → *City*).
+No tools to install besides adb. The APK on this fork's [latest release](https://github.com/nathanleite7-hash/free-my-tv/releases/latest) has the **V2 design**. It has no TMDB key, so the *Tonight* card has no picks (it says so) and the rows under the apps (Top 10, playlists) stay hidden, and it takes your city from the TV's time zone (change it in *Home Settings* → *City*). It also uses the free Inter font and Material Symbols icons instead of Apple's, and each app's own logo on the shelf. The original project's APK, with the original design, is on [its releases](https://github.com/simbasjungles/free-my-tv/releases/latest).
 
 1. **On the TV**, do step 1 above.
 2. **On your computer**, download `FreeMyTV.apk` from the release and install it:
@@ -124,7 +124,7 @@ No tools to install besides adb. This is the original project's APK, with the **
    On Android 14, Google Play Protect may hold the install with *Risky app blocked*: choose *More details* → *Install anyway*.
 3. **On the TV**, do step 3 above.
 
-If you built Free My TV yourself before, switch back to *Original* and uninstall it first: your build and the release are signed with different keys. For the picks, build it yourself with your TMDB key (below).
+If you built Free My TV yourself before, or installed the original project's APK, switch back to *Original* and uninstall it first: they're signed with different keys. For the picks, build it yourself with your TMDB key (below).
 
 ### The manual way
 

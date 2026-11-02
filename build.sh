@@ -2,7 +2,8 @@
 # Builds FreeMyTV.apk without Gradle: aapt2 -> javac -> d8 -> zipalign -> apksigner.
 # Needs a JDK (17+) and the Android SDK command-line tools (build-tools 34+, platform android-34). See README.md.
 #   ./build.sh             with config.properties (your city, your TMDB key)
-#   ./build.sh --generic   without it, as the APK on GitHub's releases: no key, and the TV's time zone gives the city
+#   ./build.sh --generic   without it, as the APK on GitHub's releases: no key, the TV's time zone gives the city, and
+#                          no local/assets (Apple's fonts and symbols, the brand marks: not ours to hand out)
 set -euo pipefail
 cd "$(dirname "$0")"
 GENERIC=false
@@ -74,7 +75,7 @@ final class Config {
     static final String TEMPERATURE = "$(prop temperature auto)";
     static final String HIDE_SERVICES = "$(prop hide_services '')";
     static final String THEME = "$(prop theme auto)";
-    static final boolean HOME_V2 = "$(prop home_layout v1)".equals("v2");   // the V2 home (bento) instead of the V1.7 one
+    static final boolean HOME_V2 = !"$(prop home_layout v2)".equals("v1");   // the V2 home (bento); v1 is the V1.7 one
     static final String GREETING_NAME = "$(prop greeting_name '')";
     static final boolean DISABLE_ASSISTANT = $ASSIST;
     static final boolean SHOW_CRYPTO = $CRYPTO;
@@ -86,7 +87,7 @@ EOF
 # The assets, with local/assets (a personal build's own files, kept out of git: Apple's SF Pro and SF Symbols) laid
 # over them.
 rm -rf out/assets && mkdir -p out/assets && cp -R app/assets/. out/assets/
-if [ -d local/assets ]; then cp -R local/assets/. out/assets/; echo "Using local/assets (personal build)"; fi
+if [ -d local/assets ] && ! $GENERIC; then cp -R local/assets/. out/assets/; echo "Using local/assets (personal build)"; fi
 "$BT/aapt2" compile --dir app/res -o out/res.zip
 # Fonts uncompressed: Android reads them straight from the APK.
 "$BT/aapt2" link -o out/base.apk -I "$AJ" --manifest app/AndroidManifest.xml --java out/gen out/res.zip \

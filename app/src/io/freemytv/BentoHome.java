@@ -507,6 +507,10 @@ final class BentoHome extends View implements Choreographer.FrameCallback, Recs.
                 bgFor = b.image;
                 bgBlur = Bitmap.createScaledBitmap(b.image, 48, 27, true);
             }
+        } else if (!Recs.hasKey(getContext())) {   // the APK on GitHub's releases: no picks without a key
+            pickTitle = Ui.tr("Tonight's picks need a TMDB key");
+            pickMeta = Ui.tr("It's free: the README shows how to add yours.");
+            pickService = "";
         }
         if (np.art != coverOf) {
             coverOf = np.art;
